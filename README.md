@@ -20,6 +20,7 @@ The list lives in [index.json](index.json). AoForge reads it from this repo each
 ## Install
 1. Download `AoForge.exe` from [Releases](../../releases). It needs no install: put it anywhere and run it. It runs on Windows 10 and 11 (.NET Framework 4.8, which Windows already has).
 2. **SmartScreen.** Windows may say "Windows protected your PC", because the exe isn't code-signed. Choose **More info → Run anyway**.
+3. **Updates.** AoForge keeps itself up to date: when a new version is out, a bar at the top offers **Update AoForge**. It downloads the new exe, swaps it in and restarts. If AoForge sits in a folder it can't write to, such as Program Files, the button opens the download page instead.
 
 ## Where it keeps things
 - `<client folder>\AoForge\installed.json`: what AoForge installed. Backups of replaced files sit next to it.

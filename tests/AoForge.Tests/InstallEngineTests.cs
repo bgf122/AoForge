@@ -196,7 +196,7 @@ public sealed class InstallEngineTests : IDisposable
     [Fact]
     public void Hand_install_version_comes_from_the_version_resource_only()
     {
-        // AoForge.exe itself has a version resource: ProductName "AoForge", 0.1.0 (+ build metadata).
+        // AoForge.exe itself has a version resource: ProductName "AoForge", its version + build metadata.
         string exe = typeof(InstallEngine).Assembly.Location;
         File.Copy(exe, Path.Combine(_client, "probe.dll"));
         var def = new AddonDef {
@@ -205,7 +205,7 @@ public sealed class InstallEngineTests : IDisposable
         };
         var status = Engine().GetStatus(def, "v9");
         Assert.Equal(AddonState.ManualInstall, status.State);
-        Assert.Equal("0.1.0", status.DetectedVersion);
+        Assert.Equal(SelfUpdater.Current.ToString(3), status.DetectedVersion);
 
         // ao-vk is detected by randy31_orig.dll, which says nothing about the installed version.
         Write("randy31_orig.dll", "game renderer");

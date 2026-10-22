@@ -37,6 +37,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     bool _installedTab;
     AddonVm _selected;
     bool _removeUserFiles;
+    GhRelease _selfRelease; // a newer AoForge release, if there is one
+    bool _selfCanReplace;   // the exe's folder is writable, so the update can be applied in place
 
     public MainWindow()
     {
@@ -115,6 +117,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     public bool CanUpdateAll => CanModify && Updatable.Any();
     public string UpdateAllText => Updatable.Count() is var n && n > 0 ? $"Update all ({n})" : "Update all";
 
+    public bool HasSelfUpdate => _selfRelease != null;
+    public string SelfUpdateText => _selfRelease == null ? null
+        : $"AoForge {_selfRelease.TagName} is available (you have v{SelfUpdater.Current.ToString(3)}).";
+    public string SelfUpdateButtonText => _selfCanReplace ? "Update AoForge" : "Download";
+
     public string LogText => _log.ToString();
     public string LastLogLine { get; private set; } = "Activity";
 
@@ -141,7 +148,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     async Task StartAsync()
     {
-        Log($"AoForge {AppPaths.Version}");
+        Log(Environment.GetCommandLineArgs().Contains("--updated") ? $"AoForge {AppPaths.Version} (just updated)" : $"AoForge {AppPaths.Version}");
         string client = ClientLocator.IsClientDir(_settings.Selected) ? _settings.Selected : null;
         if (client == null) {
             var found = ClientLocator.FindCandidates();
@@ -156,6 +163,55 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         await LoadIndexAsync();
         await RefreshAsync();
     }
+
+    async Task CheckSelfUpdateAsync()
+    {
+        try {
+            var release = await _github.GetLatestAsync(SelfUpdater.Repo);
+            bool newer = release != null && SelfUpdater.IsNewer(release.TagName, SelfUpdater.Current)
+                && release.Assets?.Any(a => a.Name == SelfUpdater.AssetName) == true;
+            if (newer && _selfRelease?.TagName != release.TagName)
+                Log($"AoForge {release.TagName} is available.");
+            _selfRelease = newer ? release : null;
+            if (newer)
+                _selfCanReplace = SelfUpdater.CanReplace(SelfUpdater.ExePath);
+        } catch (Exception e) {
+            Log($"Couldn't check for a new AoForge: {e.Message}");
+        }
+        RaiseAll();
+    }
+
+    async void OnSelfUpdate(object sender, RoutedEventArgs e)
+    {
+        var release = _selfRelease;
+        if (release == null || _busy)
+            return;
+        string exe = SelfUpdater.ExePath;
+        if (!_selfCanReplace) {
+            // e.g. under Program Files: let the browser download it instead
+            OpenUrl(release.HtmlUrl);
+            return;
+        }
+
+        SetBusy(true);
+        try {
+            var asset = release.Assets.First(a => a.Name == SelfUpdater.AssetName);
+            Log($"Downloading AoForge {release.TagName}…");
+            string downloaded = await _github.DownloadAsync(asset, null);
+            SelfUpdater.Verify(downloaded, release.TagName);
+            SelfUpdater.Apply(downloaded, exe);
+            Log($"Installed AoForge {release.TagName}; restarting.");
+            SelfUpdater.Restart(exe);
+            Application.Current.Shutdown();
+        } catch (Exception ex) {
+            Log($"Updating AoForge failed: {ex.Message}");
+            MessageBox.Show(this, $"{ex.Message}\n\nYou can download the new version from the release page instead.",
+                "Update AoForge", MessageBoxButton.OK, MessageBoxImage.Error);
+            SetBusy(false);
+        }
+    }
+
+    void OnSelfUpdateNotes(object sender, RoutedEventArgs e) => OpenUrl(_selfRelease?.HtmlUrl);
 
     async Task LoadIndexAsync()
     {
@@ -195,6 +251,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         SetBusy(true);
         _error = null;
         try {
+            var selfCheck = CheckSelfUpdateAsync();
             await Task.WhenAll(_addons.Select(async a => {
                 try {
                     a.Release = await _github.GetLatestAsync(a.Def.Repo);
@@ -204,6 +261,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                     Log($"{a.Name}: couldn't check for releases: {e.Message}");
                 }
             }));
+            await selfCheck;
             UpdateStatuses();
             int updates = Updatable.Count();
             Log(updates > 0 ? $"{updates} update(s) available."
@@ -430,9 +488,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         return !_busy;
     }
 
-    void OnOpenHomepage(object sender, RoutedEventArgs e)
+    void OnOpenHomepage(object sender, RoutedEventArgs e) => OpenUrl(_selected?.Homepage);
+
+    static void OpenUrl(string url)
     {
-        string url = _selected?.Homepage;
         if (url != null && url.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
             Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
     }

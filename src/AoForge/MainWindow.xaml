@@ -52,8 +52,23 @@
             </Grid>
         </Border>
 
+        <StackPanel Grid.Row="1">
+        <!-- A newer AoForge is available -->
+        <Border Background="{StaticResource AccentSoft}" Padding="22,8" Visibility="{Binding HasSelfUpdate, Converter={StaticResource Vis}}">
+            <DockPanel>
+                <Button DockPanel.Dock="Right" Style="{StaticResource AccentBtn}" Content="{Binding SelfUpdateButtonText}"
+                        IsEnabled="{Binding IsIdle}" Click="OnSelfUpdate" Padding="14,5" />
+                <Button DockPanel.Dock="Right" Style="{StaticResource LinkBtn}" Click="OnSelfUpdateNotes" Margin="0,0,16,0"
+                        VerticalAlignment="Center">
+                    <TextBlock Text="What's new" TextDecorations="Underline"
+                               Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" />
+                </Button>
+                <TextBlock Text="{Binding SelfUpdateText}" FontWeight="SemiBold" VerticalAlignment="Center" TextWrapping="Wrap" />
+            </DockPanel>
+        </Border>
+
         <!-- Banner: game running, no client, errors -->
-        <Border Grid.Row="1" Padding="22,9" Visibility="{Binding HasBanner, Converter={StaticResource Vis}}">
+        <Border Padding="22,9" Visibility="{Binding HasBanner, Converter={StaticResource Vis}}">
             <Border.Style>
                 <Style TargetType="Border">
                     <Setter Property="Background" Value="{StaticResource WarnSoft}" />
@@ -66,6 +81,7 @@
             </Border.Style>
             <TextBlock Text="{Binding Banner}" TextWrapping="Wrap" FontWeight="SemiBold" />
         </Border>
+        </StackPanel>
 
         <!-- Content -->
         <Grid Grid.Row="2" Margin="22,18,22,12">
