@@ -1,0 +1,260 @@
+<Window x:Class="AoForge.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="AoForge" Width="1120" Height="720" MinWidth="820" MinHeight="520"
+        WindowStartupLocation="CenterScreen" Icon="AoForge.ico" Background="{StaticResource Bg}"
+        FontFamily="Segoe UI" FontSize="13" Foreground="{StaticResource Text}"
+        UseLayoutRounding="True" TextOptions.TextFormattingMode="Display">
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <!-- Header -->
+        <Border Background="{StaticResource Panel}" BorderBrush="{StaticResource Line}" BorderThickness="0,0,0,1" Padding="22,14">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                    <Border Width="34" Height="34" CornerRadius="8" Background="{StaticResource Accent}">
+                        <Path Data="M 5 12 L 27 12 L 27 15.2 L 21.5 16 L 20 19 L 21.5 23.5 L 24 23.5 L 24 26 L 8 26 L 8 23.5 L 10.5 23.5 L 12 19 L 10.5 16 L 5 15 Z M 9 7 L 23 7 L 23 10.3 L 9 10.3 Z"
+                              Fill="White" Stretch="Uniform" Margin="7" />
+                    </Border>
+                    <TextBlock Margin="12,0,0,0" VerticalAlignment="Center" FontSize="21" FontWeight="Bold">
+                        <Run Text="Ao" /><Run Text="Forge" Foreground="{StaticResource Accent}" />
+                    </TextBlock>
+                </StackPanel>
+
+                <StackPanel Grid.Column="1" Margin="36,0,24,0" VerticalAlignment="Center">
+                    <TextBlock Text="CLIENT FOLDER" FontSize="10" FontWeight="SemiBold" Foreground="{StaticResource Faint}" />
+                    <Button x:Name="ClientButton" Style="{StaticResource LinkBtn}" Click="OnClientButton" Margin="0,2,0,0"
+                            HorizontalAlignment="Left" ToolTip="{Binding ClientTooltip}">
+                        <DockPanel>
+                            <TextBlock DockPanel.Dock="Right" Text=" ▾" Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" />
+                            <TextBlock Text="{Binding ClientDisplay}" FontSize="13" TextTrimming="CharacterEllipsis"
+                                       Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" />
+                        </DockPanel>
+                    </Button>
+                </StackPanel>
+
+                <Button Grid.Column="2" Style="{StaticResource Btn}" Content="Check for updates" VerticalAlignment="Center"
+                        IsEnabled="{Binding IsIdle}" Click="OnRefresh" />
+                <Button Grid.Column="3" Style="{StaticResource AccentBtn}" Content="{Binding UpdateAllText}" VerticalAlignment="Center"
+                        IsEnabled="{Binding CanUpdateAll}" Click="OnUpdateAll" Margin="10,0,0,0" />
+            </Grid>
+        </Border>
+
+        <!-- Banner: game running, no client, errors -->
+        <Border Grid.Row="1" Padding="22,9" Visibility="{Binding HasBanner, Converter={StaticResource Vis}}">
+            <Border.Style>
+                <Style TargetType="Border">
+                    <Setter Property="Background" Value="{StaticResource WarnSoft}" />
+                    <Style.Triggers>
+                        <DataTrigger Binding="{Binding BannerIsError}" Value="True">
+                            <Setter Property="Background" Value="#33EF4444" />
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </Border.Style>
+            <TextBlock Text="{Binding Banner}" TextWrapping="Wrap" FontWeight="SemiBold" />
+        </Border>
+
+        <!-- Content -->
+        <Grid Grid.Row="2" Margin="22,18,22,12">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="3*" MinWidth="400" />
+                <ColumnDefinition Width="22" />
+                <ColumnDefinition Width="2*" MinWidth="320" />
+            </Grid.ColumnDefinitions>
+
+            <!-- Addon list -->
+            <DockPanel>
+                <DockPanel DockPanel.Dock="Top" Margin="0,0,6,14" LastChildFill="False">
+                    <RadioButton DockPanel.Dock="Left" Style="{StaticResource TabRadio}" Content="{Binding InstalledTabText}"
+                                 IsChecked="{Binding IsInstalledTab}" VerticalAlignment="Bottom" />
+                    <RadioButton DockPanel.Dock="Left" Style="{StaticResource TabRadio}" Content="{Binding BrowseTabText}"
+                                 IsChecked="{Binding IsBrowseTab}" VerticalAlignment="Bottom" />
+                    <Grid DockPanel.Dock="Right" Width="220">
+                        <TextBox x:Name="SearchBox" Text="{Binding Search, UpdateSourceTrigger=PropertyChanged}" Padding="30,6,8,6" />
+                        <TextBlock Text="⌕" FontSize="15" Foreground="{StaticResource Faint}" Margin="10,0,0,1"
+                                   VerticalAlignment="Center" IsHitTestVisible="False" />
+                        <TextBlock Text="Search addons" Foreground="{StaticResource Faint}" Margin="31,0,0,0"
+                                   VerticalAlignment="Center" IsHitTestVisible="False">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Visibility" Value="Collapsed" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding Text, ElementName=SearchBox}" Value="">
+                                            <Setter Property="Visibility" Value="Visible" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                    </Grid>
+                </DockPanel>
+
+                <Grid>
+                    <ListBox x:Name="AddonList" Style="{StaticResource CardList}" ItemsSource="{Binding View}"
+                             SelectedItem="{Binding Selected}">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <Border Width="52" Height="52" CornerRadius="10" Background="{Binding IconBrush}" VerticalAlignment="Top">
+                                        <TextBlock Text="{Binding Initials}" FontSize="19" FontWeight="Bold" Foreground="White"
+                                                   HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                    </Border>
+                                    <StackPanel Grid.Column="1" Margin="14,0,12,0">
+                                        <TextBlock>
+                                            <Run Text="{Binding Name, Mode=OneWay}" FontSize="16" FontWeight="SemiBold" />
+                                            <Run Text="{Binding ByAuthor, Mode=OneWay}" Foreground="{StaticResource Muted}" />
+                                        </TextBlock>
+                                        <TextBlock Text="{Binding Summary}" Style="{StaticResource MutedText}" TextWrapping="Wrap"
+                                                   Margin="0,4,0,8" MaxHeight="38" TextTrimming="CharacterEllipsis" />
+                                        <StackPanel Orientation="Horizontal">
+                                            <Border Style="{StaticResource Badge}">
+                                                <TextBlock Text="{Binding StatusText}" FontSize="11" FontWeight="SemiBold"
+                                                           Foreground="{Binding (TextElement.Foreground), RelativeSource={RelativeSource AncestorType=Border}}" />
+                                            </Border>
+                                            <TextBlock Text="{Binding VersionText}" Foreground="{StaticResource Faint}" FontSize="12"
+                                                       Margin="10,0,0,0" VerticalAlignment="Center" />
+                                        </StackPanel>
+                                    </StackPanel>
+                                    <Button Grid.Column="2" Style="{StaticResource AccentBtn}" Content="{Binding PrimaryText}"
+                                            VerticalAlignment="Center" MinWidth="92" Click="OnPrimary" Tag="{Binding}"
+                                            ToolTip="{Binding PrimaryHint}"
+                                            Visibility="{Binding CanPrimary, Converter={StaticResource Vis}}"
+                                            IsEnabled="{Binding DataContext.CanModify, RelativeSource={RelativeSource AncestorType=Window}}" />
+                                </Grid>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                    <TextBlock Text="{Binding EmptyText}" Style="{StaticResource MutedText}" HorizontalAlignment="Center"
+                               VerticalAlignment="Top" Margin="0,40,0,0" TextAlignment="Center" TextWrapping="Wrap"
+                               Visibility="{Binding IsEmpty, Converter={StaticResource Vis}}" />
+                </Grid>
+            </DockPanel>
+
+            <!-- Details -->
+            <Border Grid.Column="2" Background="{StaticResource Panel}" CornerRadius="10" BorderBrush="{StaticResource Line}" BorderThickness="1">
+                <Grid>
+                    <TextBlock Text="Select an addon to see its details." Style="{StaticResource MutedText}"
+                               HorizontalAlignment="Center" VerticalAlignment="Center"
+                               Visibility="{Binding HasNoSelection, Converter={StaticResource Vis}}" />
+                    <ScrollViewer VerticalScrollBarVisibility="Auto" DataContext="{Binding Selected}"
+                                  Visibility="{Binding DataContext.HasSelection, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource Vis}}">
+                        <StackPanel Margin="20">
+                            <StackPanel Orientation="Horizontal">
+                                <Border Width="60" Height="60" CornerRadius="12" Background="{Binding IconBrush}">
+                                    <TextBlock Text="{Binding Initials}" FontSize="22" FontWeight="Bold" Foreground="White"
+                                               HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                </Border>
+                                <StackPanel Margin="14,0,0,0" VerticalAlignment="Center">
+                                    <TextBlock Text="{Binding Name}" FontSize="20" FontWeight="Bold" />
+                                    <TextBlock Style="{StaticResource MutedText}" Margin="0,2,0,0">
+                                        <Run Text="{Binding ByAuthor, Mode=OneWay}" />
+                                        <Run Text="  ·  " />
+                                        <Run Text="{Binding License, Mode=OneWay}" />
+                                    </TextBlock>
+                                    <Button Style="{StaticResource LinkBtn}" Click="OnOpenHomepage" Margin="0,3,0,0" HorizontalAlignment="Left">
+                                        <TextBlock Text="{Binding Homepage}" TextDecorations="Underline" FontSize="12"
+                                                   Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" />
+                                    </Button>
+                                </StackPanel>
+                            </StackPanel>
+
+                            <StackPanel Orientation="Horizontal" Margin="0,16,0,0">
+                                <Border Style="{StaticResource Badge}">
+                                    <TextBlock Text="{Binding StatusText}" FontSize="11" FontWeight="SemiBold"
+                                               Foreground="{Binding (TextElement.Foreground), RelativeSource={RelativeSource AncestorType=Border}}" />
+                                </Border>
+                                <TextBlock Text="{Binding VersionText}" Foreground="{StaticResource Faint}" Margin="10,0,0,0" VerticalAlignment="Center" />
+                            </StackPanel>
+
+                            <Border Background="{StaticResource WarnSoft}" CornerRadius="6" Padding="10,8" Margin="0,12,0,0"
+                                    Visibility="{Binding HasProblems, Converter={StaticResource Vis}}">
+                                <TextBlock Text="{Binding Problems}" TextWrapping="Wrap" Foreground="{StaticResource Warn}" />
+                            </Border>
+
+                            <!-- Options -->
+                            <ItemsControl ItemsSource="{Binding Options}" Margin="0,14,0,0"
+                                          Visibility="{Binding HasOptions, Converter={StaticResource Vis}}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <CheckBox IsChecked="{Binding IsChecked}" Margin="0,0,0,8" ToolTip="{Binding Description}">
+                                            <StackPanel>
+                                                <TextBlock Text="{Binding Label}" />
+                                                <TextBlock Text="{Binding Description}" Style="{StaticResource MutedText}" FontSize="12" TextWrapping="Wrap" />
+                                            </StackPanel>
+                                        </CheckBox>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                            <TextBlock Text="Option changes apply on the next install, update or reinstall." FontSize="11"
+                                       Foreground="{StaticResource Faint}" Margin="27,-4,0,0"
+                                       Visibility="{Binding HasOptions, Converter={StaticResource Vis}}" />
+
+                            <!-- Actions -->
+                            <WrapPanel Margin="0,16,0,0"
+                                       IsEnabled="{Binding DataContext.CanModify, RelativeSource={RelativeSource AncestorType=Window}}">
+                                <Button Style="{StaticResource AccentBtn}" Content="{Binding PrimaryText}" Click="OnPrimary" Tag="{Binding}"
+                                        Margin="0,0,8,8" MinWidth="100" ToolTip="{Binding PrimaryHint}"
+                                        Visibility="{Binding CanPrimary, Converter={StaticResource Vis}}" />
+                                <Button Style="{StaticResource Btn}" Content="Reinstall" Click="OnReinstall" Tag="{Binding}"
+                                        Margin="0,0,8,8" ToolTip="Download the installed release again and replace its files."
+                                        Visibility="{Binding CanReinstall, Converter={StaticResource Vis}}" />
+                                <Button Style="{StaticResource DangerBtn}" Content="Uninstall" Click="OnUninstall" Tag="{Binding}"
+                                        Margin="0,0,8,8" Visibility="{Binding CanUninstall, Converter={StaticResource Vis}}" />
+                            </WrapPanel>
+                            <CheckBox Content="When uninstalling, also delete its settings and logs"
+                                      IsChecked="{Binding DataContext.RemoveUserFiles, RelativeSource={RelativeSource AncestorType=Window}}"
+                                      Visibility="{Binding CanUninstall, Converter={StaticResource Vis}}" Margin="0,2,0,0" />
+
+                            <Border Background="{StaticResource InfoSoft}" CornerRadius="6" Padding="10,8" Margin="0,14,0,0"
+                                    Visibility="{Binding HasNotes, Converter={StaticResource Vis}}">
+                                <TextBlock TextWrapping="Wrap">
+                                    <Run Text="After installing: " FontWeight="SemiBold" Foreground="{StaticResource Info}" />
+                                    <Run Text="{Binding Notes, Mode=OneWay}" />
+                                </TextBlock>
+                            </Border>
+
+                            <TextBlock Text="About" FontSize="14" FontWeight="SemiBold" Margin="0,20,0,6" />
+                            <TextBlock Text="{Binding Description}" TextWrapping="Wrap" Foreground="#C9CED6" LineHeight="19" />
+
+                            <TextBlock Text="Latest release" FontSize="14" FontWeight="SemiBold" Margin="0,20,0,2" />
+                            <TextBlock Text="{Binding ReleaseTitle}" Style="{StaticResource MutedText}" TextWrapping="Wrap" Margin="0,0,0,8" />
+                            <TextBox Text="{Binding ReleaseNotes, Mode=OneWay}" IsReadOnly="True" TextWrapping="Wrap"
+                                     Background="{StaticResource Card}" Foreground="#C9CED6" FontSize="12"
+                                     MaxHeight="320" VerticalScrollBarVisibility="Auto"
+                                     Visibility="{Binding HasReleaseNotes, Converter={StaticResource Vis}}" />
+                        </StackPanel>
+                    </ScrollViewer>
+                </Grid>
+            </Border>
+        </Grid>
+
+        <!-- Activity log -->
+        <Border Grid.Row="3" Background="{StaticResource Panel}" BorderBrush="{StaticResource Line}" BorderThickness="0,1,0,0">
+            <Expander x:Name="LogExpander" Foreground="{StaticResource Muted}" Margin="22,4,22,6">
+                <Expander.Header>
+                    <TextBlock Text="{Binding LastLogLine}" Style="{StaticResource MutedText}" TextTrimming="CharacterEllipsis" />
+                </Expander.Header>
+                <TextBox x:Name="LogBox" Text="{Binding LogText, Mode=OneWay}" IsReadOnly="True" Height="140" Margin="0,6,0,0"
+                         FontFamily="Consolas" FontSize="12" VerticalScrollBarVisibility="Auto" TextWrapping="Wrap" />
+            </Expander>
+        </Border>
+    </Grid>
+</Window>

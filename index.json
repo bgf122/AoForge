@@ -1,0 +1,52 @@
+{
+  "schema": 1,
+  "addons": [
+    {
+      "id": "ao-vk",
+      "name": "ao-vk",
+      "author": "wannabuh",
+      "summary": "Vulkan renderer: higher frame rates, FSR upscaling, a new sky, and ground drawn out to the horizon.",
+      "description": "ao-vk replaces the game's renderer with a Vulkan one. It adds render scale with AMD FSR upscaling and optional frame generation, ground drawn out to the horizon, and a new sky and desert. Its settings are in the Renderer and Advanced tabs of the game's Options window (with AOReloaded), or in the console on the key left of 1.\n\nNeeds a GPU with Vulkan 1.3.",
+      "repo": "wannabuh/ao-vk",
+      "homepage": "https://github.com/wannabuh/ao-vk",
+      "license": "MIT",
+      "assetPattern": "^ao-vk-.*\\.zip$",
+      "options": [
+        {
+          "id": "aoreloaded",
+          "label": "Include AOReloaded (version.dll)",
+          "description": "ao-vk's in-game settings (Options, F10: the Renderer and Advanced tabs) plus AOReloaded's own features.",
+          "default": true
+        }
+      ],
+      "steps": [
+        { "action": "preserveOriginal", "file": "randy31.dll", "as": "randy31_orig.dll" },
+        { "action": "copy", "from": "randy31.dll", "to": "randy31.dll" },
+        { "action": "copy", "from": "version.dll", "to": "version.dll", "option": "aoreloaded" }
+      ],
+      "detect": [
+        { "file": "randy31_orig.dll" }
+      ],
+      "userFiles": [ "randy-vk.ini", "randy-vk*.log", "randy-vk.cache", "AOReloaded.ini", "AOReloaded*.log" ],
+      "notes": "In the game's video options, set Ground render mode to Shadows: the grass and the terrain's lighting need it."
+    },
+    {
+      "id": "clarity",
+      "name": "Clarity",
+      "author": "Vaporize",
+      "summary": "Floating combat text, readable nameplates, and a Clarity tab in the Options window.",
+      "description": "Large, outlined damage and heal numbers that keep their size at any distance, with crits and glancing hits marked, and a choice of whose numbers you see. Nameplates show level, name, org and a health bar; your target and fight target get brackets, and you can click a plate to select that character. Everything is set in Options > Clarity or in Clarity.ini.\n\nIf a client update changes the functions Clarity uses, the affected features switch themselves off until Clarity is updated.",
+      "repo": "bgf122/Clarity",
+      "homepage": "https://github.com/bgf122/Clarity",
+      "license": "MIT",
+      "assetPattern": "^Clarity-.*\\.zip$",
+      "steps": [
+        { "action": "copy", "from": "dinput.dll", "to": "dinput.dll" }
+      ],
+      "detect": [
+        { "file": "dinput.dll", "productName": "Clarity" }
+      ],
+      "userFiles": [ "Clarity.ini", "Clarity.log" ]
+    }
+  ]
+}

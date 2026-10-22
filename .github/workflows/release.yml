@@ -1,0 +1,42 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build
+        run: dotnet build AoForge.sln -c Release
+
+      - name: Test (includes parsing index.json)
+        run: dotnet test AoForge.sln -c Release --no-build
+
+      - name: Check version
+        shell: pwsh
+        run: |
+          $ver = (Get-Item src/AoForge/bin/Release/net48/AoForge.exe).VersionInfo.ProductVersion -replace '\+.*$', ''
+          "AoForge $ver"
+          if ($env:GITHUB_REF_TYPE -eq 'tag' -and "v$ver" -ne $env:GITHUB_REF_NAME) {
+            throw "Tag $env:GITHUB_REF_NAME does not match <Version> $ver in AoForge.csproj"
+          }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AoForge
+          path: src/AoForge/bin/Release/net48/AoForge.exe
+
+      - name: Release
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "${{ github.ref_name }}" src/AoForge/bin/Release/net48/AoForge.exe --title "AoForge ${{ github.ref_name }}" --generate-notes
