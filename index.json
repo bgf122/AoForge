@@ -47,6 +47,28 @@
         { "file": "dinput.dll", "productName": "Clarity" }
       ],
       "userFiles": [ "Clarity.ini", "Clarity.log" ]
+    },
+    {
+      "id": "merkui",
+      "name": "MerkUI",
+      "author": "MerkXL",
+      "summary": "A whole new interface: flat status, target, team and raid bars, buff trackers, action bars, a minimap, themes and new login screens.",
+      "description": "MerkUI replaces AO's status, target, team and timer bars with clean, flat ones, adds buff and debuff trackers, combat text, a mission window and resizable action bars, gives the login and character screens a new look with moving backgrounds, and puts every setting in the game's options window (F10). With ao-vk, its renderer settings are under F10 > MerkUI > Renderer.\n\nMerkUI is a version.dll, like AOReloaded, so it takes the place of ao-vk's AOReloaded option. It only works on the exact client version it was built for; on any other it stays off.\n\nMerkUI also copies its skin into the game's profile folders; uninstalling here doesn't remove those copies (see MerkUI's README).",
+      "repo": "MerkXL/MerkUI",
+      "homepage": "https://github.com/MerkXL/MerkUI",
+      "license": "no licence stated",
+      "assetPattern": "^MerkUI-[0-9.]+\\.zip$",
+      "minAoForge": "0.3.0",
+      "steps": [
+        { "action": "copy", "from": "files/version.dll", "to": "version.dll" },
+        { "action": "copyTree", "from": "files", "to": "" }
+      ],
+      "detect": [
+        { "file": "MerkUI_Skin/merkui_skin.txt", "versionPattern": "MerkUI skin ([0-9]+(?:\\.[0-9]+)+)" },
+        { "file": "version.dll", "contains": "MerkUI" }
+      ],
+      "userFiles": [ "MerkUITimerBars.ini", "MerkUI.log", "MerkUI_*.log", "MerkUI_installed.txt" ],
+      "notes": "Start the game once and quit at the login screen, then choose MerkUI in the PRK launcher under Settings > GUI > GUI Skin and start again. With ao-vk, set Ground render mode back to Shadows in the video options afterwards. MerkUI has its own updater too: update it either here or there, not both."
     }
   ]
 }

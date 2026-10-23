@@ -427,7 +427,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             string zip = await _github.DownloadAsync(asset, progress);
             a.BusyText = $"{verb}…";
             var engine = _engine;
-            await Task.Run(() => engine.Install(a.Def, a.LatestTag, zip, options, line => Log($"  {line}")));
+            var defs = _index.Addons.ToList();
+            await Task.Run(() => engine.Install(a.Def, a.LatestTag, zip, options, line => Log($"  {line}"), defs));
             TryDelete(zip);
             Log($"{a.Name} {a.LatestTag} is installed.");
             a.BusyText = null;

@@ -214,6 +214,102 @@ public sealed class InstallEngineTests : IDisposable
         Assert.Null(aovk.DetectedVersion);
     }
 
+    AddonDef MerkUI => _index.Addons.Single(a => a.Id == "merkui");
+
+    // A release zip like MerkUI's: the files to install under files/, scripts and docs beside them.
+    string MerkZip(string ver) => Zip($"MerkUI-{ver}",
+        ("files/version.dll", $"MerkUI dll {ver}"),
+        ("files/MerkUI_LoginFrame.bmp", "bmp"),
+        ("files/MerkUI_Skin/merkui_skin.txt", $"MerkUI skin {ver}-omni1"),
+        ("files/MerkUI_Skin/Views/LoginWindow.xml", "<xml/>"),
+        ("Install.bat", "bat"),
+        ("README.md", "readme"));
+
+    [Fact]
+    public void Folder_install_copies_the_tree_and_uninstall_removes_it_with_its_folders()
+    {
+        Engine().Install(MerkUI, "v1.1.24", MerkZip("1.1.24"), NoOptions, Log, _index.Addons);
+
+        Assert.Equal("MerkUI dll 1.1.24", Read("version.dll"));
+        Assert.Equal("bmp", Read("MerkUI_LoginFrame.bmp"));
+        Assert.Equal("<xml/>", Read(@"MerkUI_Skin\Views\LoginWindow.xml"));
+        Assert.False(Exists("Install.bat"));
+        Assert.False(Exists("README.md"));
+        Assert.Equal(4, Engine().Find("merkui").FileList.Count);
+        Assert.Equal(AddonState.Installed, Engine().GetStatus(MerkUI, "v1.1.24").State);
+
+        Engine().Uninstall(MerkUI, removeUserFiles: false, Log);
+        Assert.False(Exists("version.dll"));
+        Assert.False(Directory.Exists(Path.Combine(_client, "MerkUI_Skin")));
+        Assert.True(Exists("AnarchyOnline.exe"));
+    }
+
+    [Fact]
+    public void Taking_over_another_addons_file_turns_its_option_off()
+    {
+        Engine().Install(AoVk, "v1", AoVkZip("1"), WithAor, Log, _index.Addons);
+        var e = Engine();
+        Assert.Contains(e.FindConflicts(MerkUI, NoOptions, _index.Addons), c => c.Contains("ao-vk") && c.Contains("AOReloaded"));
+
+        e.Install(MerkUI, "v1.1.24", MerkZip("1.1.24"), NoOptions, Log, _index.Addons);
+
+        var aovk = Engine().Find("ao-vk");
+        Assert.DoesNotContain(aovk.FileList, f => f.Path == "version.dll");
+        Assert.DoesNotContain("aoreloaded", aovk.OptionList);
+        Assert.Equal(AddonState.Installed, Engine().GetStatus(AoVk, "v1").State); // no repair needed
+        Assert.Equal("MerkUI dll 1.1.24", Read("version.dll"));
+
+        // ao-vk's next update leaves MerkUI's version.dll alone.
+        Engine().Install(AoVk, "v2", AoVkZip("2"), Engine().Find("ao-vk").OptionList, Log, _index.Addons);
+        Assert.Equal("MerkUI dll 1.1.24", Read("version.dll"));
+        Assert.Equal(AddonState.Installed, Engine().GetStatus(MerkUI, "v1.1.24").State);
+
+        // Uninstalling MerkUI removes its version.dll; ao-vk stays installed without AOReloaded.
+        Engine().Uninstall(MerkUI, removeUserFiles: false, Log);
+        Assert.False(Exists("version.dll"));
+        Assert.Equal("ao-vk 2", Read("randy31.dll"));
+    }
+
+    [Fact]
+    public void Hand_installed_MerkUI_is_detected_with_its_version()
+    {
+        Directory.CreateDirectory(Path.Combine(_client, "MerkUI_Skin"));
+        Write(@"MerkUI_Skin\merkui_skin.txt", "MerkUI skin 1.1.24-omni631");
+        Write("version.dll", "MZ ... MerkUI ...");
+
+        var status = Engine().GetStatus(MerkUI, "v1.1.25");
+        Assert.Equal(AddonState.ManualInstall, status.State);
+        Assert.Equal("1.1.24", status.DetectedVersion);
+    }
+
+    [Fact]
+    public void An_AOReloaded_version_dll_is_not_taken_for_MerkUI()
+    {
+        Write("version.dll", "aor 0.1.0");
+        Assert.Equal(AddonState.NotInstalled, Engine().GetStatus(MerkUI, "v1").State);
+    }
+
+    [Fact]
+    public void Unknown_install_step_is_refused_before_any_change()
+    {
+        var def = new AddonDef {
+            Id = "future", Name = "Future",
+            Steps = new() { new RecipeStep { Action = "runScript", From = "x" }, new RecipeStep { Action = StepAction.Copy, From = "a.dll", To = "a.dll" } },
+        };
+        var ex = Assert.Throws<InvalidDataException>(() => Engine().Install(def, "v1", Zip(null, ("a.dll", "x")), NoOptions, Log));
+        Assert.Contains("newer AoForge", ex.Message);
+        Assert.False(Exists("a.dll"));
+    }
+
+    [Fact]
+    public void Missing_folder_in_the_download_fails_before_any_change()
+    {
+        string zip = Zip("MerkUI-1", ("README.md", "x"));
+        Assert.Throws<InvalidDataException>(() => Engine().Install(MerkUI, "v1", zip, NoOptions, Log, _index.Addons));
+        Assert.False(Exists("version.dll"));
+        Assert.Null(Engine().Find("merkui"));
+    }
+
     [Fact]
     public void Foreign_file_is_reported_backed_up_and_put_back()
     {

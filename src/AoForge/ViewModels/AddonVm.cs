@@ -109,6 +109,10 @@ public sealed class AddonVm : Observable
     }
 
     public bool IsBusy => _busyText != null;
+
+    // The index says this addon needs a newer AoForge than this one (e.g. a new install step).
+    public bool NeedsNewerAoForge =>
+        SelfUpdater.ParseTag(Def.MinAoForge) is Version min && min > SelfUpdater.Current;
     public AddonState State => _status.State;
     public bool IsPresent => State != AddonState.NotInstalled;
     public string LatestTag => _release?.TagName;
@@ -139,7 +143,7 @@ public sealed class AddonVm : Observable
     static bool SameVersion(string a, string b) =>
         string.Equals(a.TrimStart('v', 'V'), b.TrimStart('v', 'V'), StringComparison.OrdinalIgnoreCase);
 
-    public string StatusText => IsBusy ? _busyText : State switch {
+    public string StatusText => IsBusy ? _busyText : NeedsNewerAoForge && State == AddonState.NotInstalled ? $"Needs AoForge {Def.MinAoForge}" : State switch {
         AddonState.Installed => "Installed",
         AddonState.UpdateAvailable => "Update available",
         AddonState.ManualInstall => "Installed by hand",
@@ -177,9 +181,9 @@ public sealed class AddonVm : Observable
         _ => null,
     };
 
-    public bool CanPrimary => Primary != PrimaryAction.None && !IsBusy && FindAsset() != null;
+    public bool CanPrimary => Primary != PrimaryAction.None && !IsBusy && !NeedsNewerAoForge && FindAsset() != null;
     public bool CanUninstall => !IsBusy && State is AddonState.Installed or AddonState.UpdateAvailable or AddonState.NeedsRepair;
-    public bool CanReinstall => !IsBusy && State == AddonState.Installed && FindAsset() != null;
+    public bool CanReinstall => !IsBusy && !NeedsNewerAoForge && State == AddonState.Installed && FindAsset() != null;
 
     public string Problems => string.Join("\n", _status.Problems);
     public bool HasProblems => _status.Problems.Count > 0;

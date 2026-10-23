@@ -5,6 +5,7 @@ using System.IO;
 using System.IO.Compression;
 using System.Linq;
 using System.Security.Cryptography;
+using System.Text.RegularExpressions;
 using AoForge.Models;
 
 namespace AoForge.Services;
@@ -77,24 +78,36 @@ public sealed class InstallEngine
         return new AddonStatus { State = state, InstalledTag = rec.Tag, Problems = problems };
     }
 
-    public bool IsDetected(AddonDef def) =>
-        def.DetectList.Any(r => {
-            string path = Resolve(r.File);
-            return File.Exists(path) && (r.ProductName == null || ProductName(path) == r.ProductName);
-        });
+    public bool IsDetected(AddonDef def) => def.DetectList.Any(RuleMatches);
 
-    // The version of a hand-installed copy, when a detect rule names a file with a version resource
-    // (ProductName set). Null when unknown, e.g. ao-vk's randy31.dll has no version resource.
+    bool RuleMatches(DetectRule r)
+    {
+        string path = Resolve(r.File);
+        if (!File.Exists(path))
+            return false;
+        if (r.ProductName != null && ProductName(path) != r.ProductName)
+            return false;
+        return r.Contains == null || FileContains(path, r.Contains);
+    }
+
+    // The version of a hand-installed copy, from a detect rule's version resource (ProductName set)
+    // or text (VersionPattern on the file's text). Null when unknown, e.g. ao-vk's randy31.dll.
     public string DetectedVersion(AddonDef def)
     {
-        foreach (var r in def.DetectList.Where(r => r.ProductName != null)) {
+        foreach (var r in def.DetectList.Where(RuleMatches)) {
             string path = Resolve(r.File);
-            if (!File.Exists(path))
-                continue;
             try {
-                var info = FileVersionInfo.GetVersionInfo(path);
-                if (info.ProductName == r.ProductName && !string.IsNullOrWhiteSpace(info.ProductVersion))
-                    return info.ProductVersion.Split('+')[0].Trim(); // drop "+commit" build metadata
+                if (r.VersionPattern != null) {
+                    if (new FileInfo(path).Length > 64 * 1024)
+                        continue;
+                    var m = Regex.Match(File.ReadAllText(path), r.VersionPattern);
+                    if (m.Success && m.Groups.Count > 1)
+                        return m.Groups[1].Value;
+                } else if (r.ProductName != null) {
+                    string v = FileVersionInfo.GetVersionInfo(path).ProductVersion;
+                    if (!string.IsNullOrWhiteSpace(v))
+                        return v.Split('+')[0].Trim(); // drop "+commit" build metadata
+                }
             } catch (Exception) {
                 // unreadable: unknown version
             }
@@ -102,10 +115,39 @@ public sealed class InstallEngine
         return null;
     }
 
+    static bool FileContains(string path, string text)
+    {
+        try {
+            byte[] data = File.ReadAllBytes(path);
+            byte[] needle = System.Text.Encoding.ASCII.GetBytes(text);
+            for (int i = 0; i + needle.Length <= data.Length; ++i) {
+                int k = 0;
+                while (k < needle.Length && data[i + k] == needle[k])
+                    ++k;
+                if (k == needle.Length)
+                    return true;
+            }
+        } catch (IOException) {
+        } catch (UnauthorizedAccessException) {
+        }
+        return false;
+    }
+
+    // The addon (other than exceptId) whose install recorded this file, if any.
+    InstalledAddon OwnerOf(string rel, string exceptId) =>
+        Manifest.AddonList.FirstOrDefault(a => a.Id != exceptId && a.FileList.Any(f => PathCmp.Equals(f.Path, rel)));
+
+    // The option of an addon's recipe that installs this file, if any (e.g. ao-vk's "aoreloaded").
+    static AddonOption OptionFor(AddonDef def, string rel)
+    {
+        var step = def?.StepList.FirstOrDefault(s => s.Action == StepAction.Copy && s.Option != null && PathCmp.Equals(Normalize(s.To), rel));
+        return step == null ? null : def.OptionList.FirstOrDefault(o => o.Id == step.Option);
+    }
+
     // Warnings to show before installing: files another addon owns, and files that aren't the addon's.
     public List<string> FindConflicts(AddonDef def, ICollection<string> options, IEnumerable<AddonDef> allDefs)
     {
-        var names = allDefs.ToDictionary(d => d.Id, d => d.Name);
+        var defs = allDefs.ToList();
         var rec = Find(def.Id);
         bool takeOver = rec == null && IsDetected(def);
         var preservedFiles = PreserveSteps(def).Select(s => s.File).ToList();
@@ -113,10 +155,14 @@ public sealed class InstallEngine
 
         foreach (var step in CopySteps(def, options)) {
             string rel = Normalize(step.To);
-            var owner = Manifest.AddonList.FirstOrDefault(a => a.Id != def.Id && a.FileList.Any(f => PathCmp.Equals(f.Path, rel)));
+            var owner = OwnerOf(rel, def.Id);
             if (owner != null) {
-                string ownerName = names.TryGetValue(owner.Id, out var n) ? n : owner.Id;
-                result.Add($"{rel} is also installed by {ownerName}. Installing {def.Name} replaces it, and {ownerName} will then need repair.");
+                var ownerDef = defs.FirstOrDefault(d => d.Id == owner.Id);
+                string ownerName = ownerDef?.Name ?? owner.Id;
+                var option = OptionFor(ownerDef, rel);
+                result.Add(option != null
+                    ? $"{rel} is {ownerName}'s (\"{option.Label}\"). {def.Name} takes it over: {ownerName} stays installed with that option turned off."
+                    : $"{rel} is {ownerName}'s. {def.Name} takes it over, and {ownerName} carries on without it.");
                 continue;
             }
             bool mine = rec != null && rec.FileList.Any(f => PathCmp.Equals(f.Path, rel));
@@ -128,21 +174,44 @@ public sealed class InstallEngine
 
     // --- install / update / repair / take over ------------------------------------------------
 
-    public void Install(AddonDef def, string tag, string zipPath, ICollection<string> options, Action<string> log)
+    // allDefs: the index, to turn off another addon's option when this one takes over its file.
+    public void Install(AddonDef def, string tag, string zipPath, ICollection<string> options, Action<string> log,
+                        IEnumerable<AddonDef> allDefs = null)
     {
+        var unknown = def.StepList.FirstOrDefault(s => s.Action != StepAction.Copy && s.Action != StepAction.CopyTree && s.Action != StepAction.PreserveOriginal);
+        if (unknown != null)
+            throw new InvalidDataException($"{def.Name} needs a newer AoForge (it uses the install step '{unknown.Action}').");
+
         var prev = Find(def.Id);
         bool takeOver = prev == null && IsDetected(def);
 
         using var zip = ZipFile.OpenRead(zipPath);
         var entries = MapEntries(zip);
 
-        // Check everything before the first change.
+        // Check everything before the first change. Single files first, so an explicit copy of a
+        // file wins over the same file in a copied folder.
         var copies = new List<(string Rel, string Target, ZipArchiveEntry Entry)>();
+        var seen = new HashSet<string>(PathCmp);
         foreach (var step in CopySteps(def, options)) {
             if (!entries.TryGetValue(Normalize(step.From), out var entry))
                 throw new InvalidDataException($"The {def.Name} download has no '{step.From}'. The addon's release may have changed; AoForge needs an index update.");
             string rel = Normalize(step.To);
-            copies.Add((rel, Resolve(rel), entry));
+            if (seen.Add(rel))
+                copies.Add((rel, Resolve(rel), entry));
+        }
+        foreach (var step in TreeSteps(def, options)) {
+            string from = Normalize(step.From), to = Normalize(step.To);
+            string prefix = from.Length == 0 ? "" : from + "\\";
+            int found = 0;
+            foreach (var kv in entries.Where(e => e.Key.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)).OrderBy(e => e.Key)) {
+                string sub = kv.Key.Substring(prefix.Length);
+                string rel = to.Length == 0 ? sub : to + "\\" + sub;
+                ++found;
+                if (seen.Add(rel))
+                    copies.Add((rel, Resolve(rel), kv.Value));
+            }
+            if (found == 0)
+                throw new InvalidDataException($"The {def.Name} download has no folder '{step.From}'. The addon's release may have changed; AoForge needs an index update.");
         }
         var preserves = PreserveSteps(def).Select(s => (Step: s, File: Resolve(s.File), As: Resolve(s.As))).ToList();
         EnsureWritable(copies.Select(c => c.Target).Concat(preserves.SelectMany(p => new[] { p.File, p.As })));
@@ -188,11 +257,25 @@ public sealed class InstallEngine
             }
 
             // 2. The addon's files.
+            var defs = allDefs?.ToList() ?? new List<AddonDef>();
             foreach (var c in copies) {
+                // Another addon's file (e.g. ao-vk's AOReloaded version.dll): this addon takes it
+                // over. The other stops claiming it, with the option that installs it turned off,
+                // so it neither needs repair nor puts the file back on its next update.
+                bool handedOver = false;
+                if (OwnerOf(c.Rel, def.Id) is InstalledAddon owner) {
+                    var ownerDef = defs.FirstOrDefault(d => d.Id == owner.Id);
+                    owner.FileList.RemoveAll(f => PathCmp.Equals(f.Path, c.Rel));
+                    var option = OptionFor(ownerDef, c.Rel);
+                    if (option != null)
+                        owner.OptionList.Remove(option.Id);
+                    log($"Took over {c.Rel} from {ownerDef?.Name ?? owner.Id}" + (option != null ? $" (its option \"{option.Label}\" is now off)." : "."));
+                    handedOver = true;
+                }
                 bool mine = rec.FileList.Any(f => PathCmp.Equals(f.Path, c.Rel));
                 bool preservedTarget = preserves.Any(p => PathCmp.Equals(p.File, c.Target));
                 bool backedUp = rec.BackupList.Any(b => PathCmp.Equals(b.Path, c.Rel));
-                if (File.Exists(c.Target) && !mine && !takeOver && !preservedTarget && !backedUp) {
+                if (File.Exists(c.Target) && !mine && !takeOver && !preservedTarget && !backedUp && !handedOver) {
                     string dest = Path.Combine(backupDir, c.Rel);
                     Directory.CreateDirectory(Path.GetDirectoryName(dest));
                     File.Copy(c.Target, dest, true);
@@ -283,6 +366,7 @@ public sealed class InstallEngine
             if (PathCmp.Equals(Sha256(path), f.Sha256)) {
                 File.Delete(path);
                 log($"Removed {f.Path}.");
+                PruneEmptyFolders(Path.GetDirectoryName(path));
             } else {
                 log($"Left {f.Path} in place: something else replaced it after AoForge installed it.");
             }
@@ -304,6 +388,19 @@ public sealed class InstallEngine
 
     static IEnumerable<RecipeStep> CopySteps(AddonDef def, ICollection<string> options) =>
         def.StepList.Where(s => s.Action == StepAction.Copy && (s.Option == null || options.Contains(s.Option)));
+
+    // Folders a removed file leaves empty (e.g. an addon's skin folder), up to the client folder.
+    void PruneEmptyFolders(string dir)
+    {
+        while (dir != null && dir.StartsWith(_client + "\\", StringComparison.OrdinalIgnoreCase)
+               && Directory.Exists(dir) && !Directory.EnumerateFileSystemEntries(dir).Any()) {
+            Directory.Delete(dir);
+            dir = Path.GetDirectoryName(dir);
+        }
+    }
+
+    static IEnumerable<RecipeStep> TreeSteps(AddonDef def, ICollection<string> options) =>
+        def.StepList.Where(s => s.Action == StepAction.CopyTree && (s.Option == null || options.Contains(s.Option)));
 
     static IEnumerable<RecipeStep> PreserveSteps(AddonDef def) =>
         def.StepList.Where(s => s.Action == StepAction.PreserveOriginal);

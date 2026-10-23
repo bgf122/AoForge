@@ -24,6 +24,7 @@ public sealed class AddonDef
     [DataMember(Name = "license")] public string License { get; set; }
     [DataMember(Name = "assetPattern")] public string AssetPattern { get; set; } // regex on the release asset name
     [DataMember(Name = "notes")] public string Notes { get; set; }          // shown after installing
+    [DataMember(Name = "minAoForge")] public string MinAoForge { get; set; } // oldest AoForge that can install it
     [DataMember(Name = "options")] public List<AddonOption> Options { get; set; }
     [DataMember(Name = "steps")] public List<RecipeStep> Steps { get; set; }
     [DataMember(Name = "detect")] public List<DetectRule> Detect { get; set; }
@@ -47,6 +48,7 @@ public sealed class AddonOption
 public static class StepAction
 {
     public const string Copy = "copy";                         // from (zip) -> to (client folder)
+    public const string CopyTree = "copyTree";                 // every file under folder from (zip) -> folder to ("" = client folder)
     public const string PreserveOriginal = "preserveOriginal"; // rename the game's file to "as" once
 }
 
@@ -61,10 +63,14 @@ public sealed class RecipeStep
     [DataMember(Name = "option")] public string Option { get; set; } // only when this option is on
 }
 
-// A copy of the addon installed by hand is recognised by a file, optionally with this ProductName.
+// A copy of the addon installed by hand is recognised by a file, optionally with this ProductName or
+// containing this text. Its version comes from the ProductVersion, or from VersionPattern (a regex
+// whose first group is the version) on the file's text.
 [DataContract]
 public sealed class DetectRule
 {
     [DataMember(Name = "file")] public string File { get; set; }
     [DataMember(Name = "productName")] public string ProductName { get; set; }
+    [DataMember(Name = "contains")] public string Contains { get; set; }
+    [DataMember(Name = "versionPattern")] public string VersionPattern { get; set; }
 }

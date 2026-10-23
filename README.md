@@ -14,6 +14,7 @@ AoForge is an addon manager for the Anarchy Online client: browse addons, then i
 |---|---|
 | [ao-vk](https://github.com/wannabuh/ao-vk) | Vulkan renderer: higher frame rates, FSR upscaling, new sky and ground. Optionally with [AOReloaded](https://github.com/wannabuh/AOReloaded). |
 | [Clarity](https://github.com/bgf122/Clarity) | Floating combat text, nameplates, and a settings tab. |
+| [MerkUI](https://github.com/MerkXL/MerkUI) | A whole new interface: bars, buff trackers, action bars, minimap, themes. Takes the place of AOReloaded. |
 
 The list lives in [index.json](index.json). AoForge reads it from this repo each time it starts. To add an addon, open a pull request with its entry.
 
@@ -47,11 +48,14 @@ The list lives in [index.json](index.json). AoForge reads it from this repo each
 ```
 - **Steps:**
   - `copy` takes `from`, a path inside the release zip, where a single top-level folder is ignored, and copies it to `to`, a path in the client folder.
+  - `copyTree` copies every file under the zip folder `from` into the folder `to` (`""` = the client folder itself). Uninstalling also removes the folders it leaves empty.
   - `preserveOriginal` renames the game's `file` to `as` once and puts it back on uninstall.
   - A step with `"option": "<id>"` runs only when that entry in `options` is ticked.
+- **Shared files:** if a file belongs to another installed addon (for example `version.dll`, which both AOReloaded and MerkUI use), installing takes it over. The other addon stops claiming it, and the option that installed it is switched off.
 - **Paths** must stay inside the client folder. AoForge refuses anything else.
-- **detect** recognises a copy installed by hand.
+- **detect** recognises a copy installed by hand: a `file`, optionally with its `productName` or with text it `contains`. Its version comes from the file's version resource, or from `versionPattern`, a regex whose first group is the version, applied to the file's text.
 - **userFiles** are deleted only if the user asks for that when uninstalling.
+- **minAoForge:** the oldest AoForge that can install the entry. Older ones show "Needs AoForge x.y.z". AoForge refuses install steps it doesn't know.
 
 ## Building
 ```
