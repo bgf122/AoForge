@@ -469,6 +469,21 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         if (MessageBox.Show(this, $"Uninstall {a.Name}?{extra}", "AoForge", MessageBoxButton.OKCancel, MessageBoxImage.Question) != MessageBoxResult.OK)
             return;
 
+        // The game's settings as they were before the addon (e.g. MerkUI rearranges windows and
+        // switches the GUI skin): offered back, not forced, since they lose everything since.
+        bool restoreProfile = false;
+        if (_engine.Find(a.Id)?.ProfileSnapshot is ProfileSnapshot snap) {
+            string when = DateTime.TryParse(snap.TakenUtc, null, System.Globalization.DateTimeStyles.RoundtripKind, out var t)
+                ? t.ToLocalTime().ToString("d MMM yyyy HH:mm") : "the install";
+            var answer = MessageBox.Show(this,
+                $"Restore your game settings from before {a.Name}? (saved {when})\n\n" +
+                "This puts back your window layouts, options and GUI skin for every character. Changes made since then are lost.",
+                $"Uninstall {a.Name}", MessageBoxButton.YesNoCancel, MessageBoxImage.Question);
+            if (answer == MessageBoxResult.Cancel)
+                return;
+            restoreProfile = answer == MessageBoxResult.Yes;
+        }
+
         SetBusy(true);
         bool removeUserFiles = RemoveUserFiles;
         var giveBack = new List<string>();
@@ -476,7 +491,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             Log($"Uninstalling {a.Name}…");
             a.BusyText = "Removing…";
             var engine = _engine;
-            await RunHandlingLocksAsync(() => giveBack = engine.Uninstall(a.Def, removeUserFiles, line => Log($"  {line}")));
+            await RunHandlingLocksAsync(() => giveBack = engine.Uninstall(a.Def, removeUserFiles, line => Log($"  {line}"), restoreProfile));
             Log($"{a.Name} is uninstalled.");
         } catch (Exception ex) {
             Log($"{a.Name}: {ex.Message}");

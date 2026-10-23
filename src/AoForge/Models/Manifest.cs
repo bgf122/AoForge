@@ -23,6 +23,7 @@ public sealed class InstalledAddon
     [DataMember(Name = "preserved")] public List<PreservedFile> Preserved { get; set; }
     [DataMember(Name = "backups")] public List<BackupFile> Backups { get; set; }
     [DataMember(Name = "takenOver")] public List<TakenFile> TakenOver { get; set; }
+    [DataMember(Name = "profileSnapshot")] public ProfileSnapshot ProfileSnapshot { get; set; }
 
     public List<string> OptionList => Options ??= new();
     public List<InstalledFile> FileList => Files ??= new();
@@ -39,6 +40,17 @@ public sealed class TakenFile
     [DataMember(Name = "path")] public string Path { get; set; }
     [DataMember(Name = "from")] public string From { get; set; }     // the other addon's id
     [DataMember(Name = "option")] public string Option { get; set; } // its option that installs the file, if any
+}
+
+// The game's profile folders as they were before the addon was first installed (ProfileRules.Snapshot).
+[DataContract]
+public sealed class ProfileSnapshot
+{
+    [DataMember(Name = "dir")] public string Dir { get; set; }               // relative to the client folder
+    [DataMember(Name = "takenUtc")] public string TakenUtc { get; set; }
+    [DataMember(Name = "folders")] public List<string> Folders { get; set; } // the ones that existed
+
+    public List<string> FolderList => Folders ??= new();
 }
 
 [DataContract]

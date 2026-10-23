@@ -29,11 +29,26 @@ public sealed class AddonDef
     [DataMember(Name = "steps")] public List<RecipeStep> Steps { get; set; }
     [DataMember(Name = "detect")] public List<DetectRule> Detect { get; set; }
     [DataMember(Name = "userFiles")] public List<string> UserFiles { get; set; } // files the addon creates; wildcards allowed
+    [DataMember(Name = "profile")] public ProfileRules Profile { get; set; }
 
     public List<AddonOption> OptionList => Options ??= new();
     public List<RecipeStep> StepList => Steps ??= new();
     public List<DetectRule> DetectList => Detect ??= new();
     public List<string> UserFileList => UserFiles ??= new();
+}
+
+// Folders in the game's profile (GameProfile: %LOCALAPPDATA%\Funcom\Anarchy Online\<hash>\client)
+// that the addon changes once the game runs with it. Snapshot: copied on the first install, and
+// the user can put them back on uninstall (e.g. Prefs, which MerkUI rearranges). Remove: deleted on
+// uninstall (e.g. the skin MerkUI copies to Gui\MerkUI).
+[DataContract]
+public sealed class ProfileRules
+{
+    [DataMember(Name = "snapshot")] public List<string> Snapshot { get; set; }
+    [DataMember(Name = "remove")] public List<string> Remove { get; set; }
+
+    public List<string> SnapshotList => Snapshot ??= new();
+    public List<string> RemoveList => Remove ??= new();
 }
 
 [DataContract]

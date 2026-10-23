@@ -15,12 +15,14 @@ public sealed class InstallEngineTests : IDisposable
 {
     readonly string _root = Path.Combine(Path.GetTempPath(), "AoForgeTests", Guid.NewGuid().ToString("N"));
     readonly string _client;
+    readonly string _profile; // stands in for the game's %LOCALAPPDATA% profile folder
     readonly AddonIndex _index;
     readonly List<string> _log = new();
 
     public InstallEngineTests()
     {
         _client = Path.Combine(_root, "client");
+        _profile = Path.Combine(_root, "profile", "client");
         Directory.CreateDirectory(_client);
         Write("AnarchyOnline.exe", "game exe");
         Write("randy31.dll", "game renderer");
@@ -29,7 +31,11 @@ public sealed class InstallEngineTests : IDisposable
 
     public void Dispose()
     {
-        try { Directory.Delete(_root, true); } catch (IOException) { }
+        try {
+            foreach (string f in Directory.GetFiles(_root, "*", SearchOption.AllDirectories))
+                File.SetAttributes(f, FileAttributes.Normal);
+            Directory.Delete(_root, true);
+        } catch (IOException) { }
     }
 
     AddonDef AoVk => _index.Addons.Single(a => a.Id == "ao-vk");
@@ -40,7 +46,7 @@ public sealed class InstallEngineTests : IDisposable
     void Write(string rel, string text) => File.WriteAllText(Path.Combine(_client, rel), text);
     string Read(string rel) => File.ReadAllText(Path.Combine(_client, rel));
     bool Exists(string rel) => File.Exists(Path.Combine(_client, rel));
-    InstallEngine Engine() => new(_client);
+    InstallEngine Engine() => new(_client, _profile);
     void Log(string s) => _log.Add(s);
 
     // A release zip like ao-vk's: everything inside one top-level folder.
@@ -286,6 +292,94 @@ public sealed class InstallEngineTests : IDisposable
         var status = Engine().GetStatus(MerkUI, "v1.1.25");
         Assert.Equal(AddonState.ManualInstall, status.State);
         Assert.Equal("1.1.24", status.DetectedVersion);
+    }
+
+    void WriteProfile(string rel, string text)
+    {
+        string path = Path.Combine(_profile, rel);
+        Directory.CreateDirectory(Path.GetDirectoryName(path));
+        File.WriteAllText(path, text);
+    }
+
+    string ReadProfile(string rel) => File.ReadAllText(Path.Combine(_profile, rel));
+    bool ProfileDirExists(string rel) => Directory.Exists(Path.Combine(_profile, rel));
+
+    [Theory]
+    [InlineData(@"C:\Project Rubi-Ka\client", "2e333565")]
+    [InlineData(@"C:\PRK-Dev\client\", "f3049584")]
+    public void Profile_folder_hash_matches_the_game(string client, string hash)
+    {
+        Assert.Equal(hash, GameProfile.HashFor(client));
+    }
+
+    // What happens once the game runs with MerkUI: windows move, the launcher switches the skin,
+    // and the skin is copied into the profile.
+    void PlayWithMerkUI()
+    {
+        WriteProfile(@"Prefs\Prefs.xml", "GUIName=MerkUI");
+        WriteProfile(@"Prefs\vapo\Char1\DockAreas\DockArea1.xml", "merk layout");
+        WriteProfile(@"Prefs\vapo\Char1\New.xml", "new");
+        WriteProfile(@"Gui\MerkUI\Views\LoginWindow.xml", "<xml/>");
+    }
+
+    [Fact]
+    public void MerkUI_uninstall_can_put_the_game_settings_back()
+    {
+        WriteProfile(@"Prefs\Prefs.xml", "GUIName=ndGUI_AONewbie");
+        WriteProfile(@"Prefs\vapo\Char1\DockAreas\DockArea1.xml", "my layout");
+        WriteProfile(@"Gui\ndGUI_AONewbie\skin.txt", "other skin");
+        File.SetAttributes(Path.Combine(_profile, @"Prefs\vapo\Char1\DockAreas\DockArea1.xml"), FileAttributes.ReadOnly);
+
+        Engine().Install(MerkUI, "v1.1.24", MerkZip("1.1.24"), NoOptions, Log, _index.Addons);
+        var snap = Engine().Find("merkui").ProfileSnapshot;
+        Assert.NotNull(snap);
+        Assert.Equal(new[] { "Prefs" }, snap.FolderList);
+        File.SetAttributes(Path.Combine(_profile, @"Prefs\vapo\Char1\DockAreas\DockArea1.xml"), FileAttributes.Normal);
+        PlayWithMerkUI();
+
+        // An update keeps the first backup.
+        Engine().Install(MerkUI, "v1.1.25", MerkZip("1.1.25"), NoOptions, Log, _index.Addons);
+        Assert.Equal(snap.TakenUtc, Engine().Find("merkui").ProfileSnapshot.TakenUtc);
+
+        Engine().Uninstall(MerkUI, removeUserFiles: false, Log, restoreProfile: true);
+        Assert.Equal("GUIName=ndGUI_AONewbie", ReadProfile(@"Prefs\Prefs.xml"));
+        Assert.Equal("my layout", ReadProfile(@"Prefs\vapo\Char1\DockAreas\DockArea1.xml"));
+        Assert.False(File.Exists(Path.Combine(_profile, @"Prefs\vapo\Char1\New.xml")));
+        Assert.False(ProfileDirExists(@"Gui\MerkUI"));
+        Assert.Equal("other skin", ReadProfile(@"Gui\ndGUI_AONewbie\skin.txt"));
+        Assert.False(ProfileDirExists("Prefs.aoforge-old"));
+        Assert.False(ProfileDirExists("Prefs.aoforge-restore"));
+        Assert.False(Directory.Exists(Path.Combine(_client, "AoForge", "profile-backup")));
+    }
+
+    [Fact]
+    public void MerkUI_uninstall_without_restore_keeps_the_current_settings()
+    {
+        WriteProfile(@"Prefs\Prefs.xml", "GUIName=ndGUI_AONewbie");
+        Engine().Install(MerkUI, "v1.1.24", MerkZip("1.1.24"), NoOptions, Log, _index.Addons);
+        PlayWithMerkUI();
+
+        Engine().Uninstall(MerkUI, removeUserFiles: false, Log);
+        Assert.Equal("GUIName=MerkUI", ReadProfile(@"Prefs\Prefs.xml"));
+        Assert.False(ProfileDirExists(@"Gui\MerkUI"));
+        Assert.False(Directory.Exists(Path.Combine(_client, "AoForge", "profile-backup")));
+    }
+
+    [Fact]
+    public void No_settings_backup_without_a_profile_or_when_taking_over()
+    {
+        // The game hasn't run from this folder yet: nothing to back up.
+        Engine().Install(MerkUI, "v1.1.24", MerkZip("1.1.24"), NoOptions, Log, _index.Addons);
+        Assert.Null(Engine().Find("merkui").ProfileSnapshot);
+        Engine().Uninstall(MerkUI, removeUserFiles: false, Log, restoreProfile: true);
+
+        // A hand install has already changed the settings.
+        PlayWithMerkUI();
+        Directory.CreateDirectory(Path.Combine(_client, "MerkUI_Skin"));
+        Write(@"MerkUI_Skin\merkui_skin.txt", "MerkUI skin 1.1.24-omni631");
+        Write("version.dll", "MZ ... MerkUI ...");
+        Engine().Install(MerkUI, "v1.1.24", MerkZip("1.1.24"), NoOptions, Log, _index.Addons);
+        Assert.Null(Engine().Find("merkui").ProfileSnapshot);
     }
 
     [Fact]

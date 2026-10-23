@@ -35,14 +35,18 @@ public sealed class InstallEngine
     static readonly StringComparer PathCmp = StringComparer.OrdinalIgnoreCase;
 
     readonly string _client;
+    readonly string _profile;
 
-    public InstallEngine(string clientDir)
+    // profileDir: the game's profile folder for this client; computed from the client folder by default.
+    public InstallEngine(string clientDir, string profileDir = null)
     {
         _client = Path.GetFullPath(clientDir).TrimEnd('\\', '/');
+        _profile = Path.GetFullPath(profileDir ?? GameProfile.DirFor(_client)).TrimEnd('\\', '/');
         Manifest = File.Exists(ManifestPath) ? Json.ReadFile<Manifest>(ManifestPath) : new Manifest();
     }
 
     public string ClientDir => _client;
+    public string ProfileDir => _profile;
     public Manifest Manifest { get; }
     string DataDir => Path.Combine(_client, DataDirName);
     string ManifestPath => Path.Combine(DataDir, "installed.json");
@@ -233,6 +237,13 @@ public sealed class InstallEngine
         string backupDir = Path.Combine(DataDir, "backup", def.Id, DateTime.Now.ToString("yyyyMMdd-HHmmss"));
         var undo = new Stack<Action>();
         try {
+            // 0. The game's settings as they are before the addon first runs. Not when taking over a
+            // hand install: the addon has already changed them.
+            if (prev == null && !takeOver && def.Profile != null && def.Profile.SnapshotList.Count > 0) {
+                TakeProfileSnapshot(def, rec, log);
+                undo.Push(() => DeleteDir(Path.Combine(DataDir, "profile-backup", def.Id)));
+            }
+
             // 1. The game's originals.
             foreach (var p in preserves) {
                 if (!File.Exists(p.As)) {
@@ -316,7 +327,8 @@ public sealed class InstallEngine
     // Returns the addons whose files this one had taken over: their options are switched back on
     // here, and the caller reinstalls them so the files come back (e.g. ao-vk's AOReloaded after
     // MerkUI is uninstalled).
-    public List<string> Uninstall(AddonDef def, bool removeUserFiles, Action<string> log)
+    // restoreProfile: put back the profile folders saved at install (ProfileSnapshot) first.
+    public List<string> Uninstall(AddonDef def, bool removeUserFiles, Action<string> log, bool restoreProfile = false)
     {
         var rec = Find(def.Id) ?? throw new InvalidOperationException($"{def.Name} wasn't installed by AoForge.");
         EnsureWritable(rec.FileList.Select(f => Resolve(f.Path))
@@ -359,6 +371,20 @@ public sealed class InstallEngine
             }
         }
 
+        if (restoreProfile && rec.ProfileSnapshot != null)
+            RestoreProfileSnapshot(rec.ProfileSnapshot, log);
+        if (def.Profile != null) {
+            foreach (string rel in def.Profile.RemoveList) {
+                string dir = ResolveIn(_profile, rel);
+                if (Directory.Exists(dir)) {
+                    DeleteDir(dir);
+                    log($"Removed {Normalize(rel)} from the game's profile folder.");
+                }
+            }
+        }
+        if (rec.ProfileSnapshot != null)
+            DeleteDir(Resolve(rec.ProfileSnapshot.Dir));
+
         // Give taken-over files back: the other addon's option is on again and it gets reinstalled.
         var giveBack = new List<string>();
         foreach (var t in rec.TakenOverList) {
@@ -375,7 +401,72 @@ public sealed class InstallEngine
         Manifest.AddonList.Remove(rec);
         Save();
         DeleteEmptyDirs(Path.Combine(DataDir, "backup", def.Id));
+        DeleteEmptyDirs(Path.Combine(DataDir, "profile-backup"));
         return giveBack;
+    }
+
+    // --- the game's profile folder --------------------------------------------------------------
+
+    void TakeProfileSnapshot(AddonDef def, InstalledAddon rec, Action<string> log)
+    {
+        string dest = Path.Combine(DataDir, "profile-backup", def.Id);
+        DeleteDir(dest); // left over from an install that wasn't recorded
+        var snap = new ProfileSnapshot { Dir = Relative(dest), TakenUtc = DateTime.UtcNow.ToString("o") };
+        foreach (string rel in def.Profile.SnapshotList) {
+            string src = ResolveIn(_profile, rel);
+            if (!Directory.Exists(src))
+                continue;
+            CopyDir(src, Path.Combine(dest, Normalize(rel)));
+            snap.FolderList.Add(Normalize(rel));
+        }
+        if (snap.FolderList.Count == 0) {
+            log("The game has no settings for this client folder yet; nothing to back up.");
+            return;
+        }
+        rec.ProfileSnapshot = snap;
+        log($"Backed up the game's settings ({string.Join(", ", snap.FolderList)}) to {snap.Dir}.");
+    }
+
+    // Each folder is copied next to the current one, then swapped in, so a failure halfway leaves
+    // the current settings in place.
+    void RestoreProfileSnapshot(ProfileSnapshot snap, Action<string> log)
+    {
+        string root = Resolve(snap.Dir);
+        foreach (string rel in snap.FolderList) {
+            string src = ResolveIn(root, rel);
+            if (!Directory.Exists(src)) {
+                log($"The backup of {rel} is missing; left the current one in place.");
+                continue;
+            }
+            string target = ResolveIn(_profile, rel);
+            string staged = target + ".aoforge-restore", old = target + ".aoforge-old";
+            DeleteDir(staged);
+            DeleteDir(old);
+            CopyDir(src, staged);
+            if (Directory.Exists(target))
+                Directory.Move(target, old);
+            Directory.Move(staged, target);
+            DeleteDir(old);
+            log($"Restored the game's {rel} from before the install.");
+        }
+    }
+
+    static void CopyDir(string src, string dest)
+    {
+        Directory.CreateDirectory(dest);
+        foreach (string f in Directory.GetFiles(src))
+            File.Copy(f, Path.Combine(dest, Path.GetFileName(f)), true);
+        foreach (string d in Directory.GetDirectories(src))
+            CopyDir(d, Path.Combine(dest, Path.GetFileName(d)));
+    }
+
+    static void DeleteDir(string dir)
+    {
+        if (!Directory.Exists(dir))
+            return;
+        foreach (string f in Directory.GetFiles(dir, "*", SearchOption.AllDirectories))
+            File.SetAttributes(f, FileAttributes.Normal); // read-only files would stop Directory.Delete
+        Directory.Delete(dir, true);
     }
 
     void RemoveOwnedFile(InstalledAddon rec, InstalledFile f, Action<string> log)
@@ -428,14 +519,16 @@ public sealed class InstallEngine
 
     // A path from the index or manifest, resolved inside the client folder. Anything that could
     // point outside it (rooted, drive letters, "..") is refused.
-    string Resolve(string rel)
+    string Resolve(string rel) => ResolveIn(_client, rel);
+
+    static string ResolveIn(string root, string rel)
     {
         string n = Normalize(rel);
         if (n.Length == 0 || Path.IsPathRooted(n) || n.IndexOf(':') >= 0 || n.Split('\\').Any(s => s == ".." || s == "."))
             throw new InvalidDataException($"Refusing unsafe path '{rel}'.");
-        string full = Path.GetFullPath(Path.Combine(_client, n));
-        if (!full.StartsWith(_client + "\\", StringComparison.OrdinalIgnoreCase))
-            throw new InvalidDataException($"Refusing path outside the client folder: '{rel}'.");
+        string full = Path.GetFullPath(Path.Combine(root, n));
+        if (!full.StartsWith(root + "\\", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidDataException($"Refusing path outside {root}: '{rel}'.");
         return full;
     }
 
