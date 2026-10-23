@@ -269,6 +269,8 @@ public sealed class InstallEngine
                     var option = OptionFor(ownerDef, c.Rel);
                     if (option != null)
                         owner.OptionList.Remove(option.Id);
+                    if (!rec.TakenOverList.Any(t => PathCmp.Equals(t.Path, c.Rel)))
+                        rec.TakenOverList.Add(new TakenFile { Path = c.Rel, From = owner.Id, Option = option?.Id });
                     log($"Took over {c.Rel} from {ownerDef?.Name ?? owner.Id}" + (option != null ? $" (its option \"{option.Label}\" is now off)." : "."));
                     handedOver = true;
                 }
@@ -311,7 +313,10 @@ public sealed class InstallEngine
 
     // --- uninstall ------------------------------------------------------------------------------
 
-    public void Uninstall(AddonDef def, bool removeUserFiles, Action<string> log)
+    // Returns the addons whose files this one had taken over: their options are switched back on
+    // here, and the caller reinstalls them so the files come back (e.g. ao-vk's AOReloaded after
+    // MerkUI is uninstalled).
+    public List<string> Uninstall(AddonDef def, bool removeUserFiles, Action<string> log)
     {
         var rec = Find(def.Id) ?? throw new InvalidOperationException($"{def.Name} wasn't installed by AoForge.");
         EnsureWritable(rec.FileList.Select(f => Resolve(f.Path))
@@ -354,9 +359,23 @@ public sealed class InstallEngine
             }
         }
 
+        // Give taken-over files back: the other addon's option is on again and it gets reinstalled.
+        var giveBack = new List<string>();
+        foreach (var t in rec.TakenOverList) {
+            var owner = Find(t.From);
+            if (owner == null)
+                continue; // uninstalled meanwhile
+            if (t.Option != null && !owner.OptionList.Contains(t.Option))
+                owner.OptionList.Add(t.Option);
+            if (!giveBack.Contains(owner.Id))
+                giveBack.Add(owner.Id);
+            log($"{t.Path} goes back to {owner.Id}.");
+        }
+
         Manifest.AddonList.Remove(rec);
         Save();
         DeleteEmptyDirs(Path.Combine(DataDir, "backup", def.Id));
+        return giveBack;
     }
 
     void RemoveOwnedFile(InstalledAddon rec, InstalledFile f, Action<string> log)

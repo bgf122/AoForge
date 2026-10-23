@@ -471,11 +471,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         SetBusy(true);
         bool removeUserFiles = RemoveUserFiles;
+        var giveBack = new List<string>();
         try {
             Log($"Uninstalling {a.Name}…");
             a.BusyText = "Removing…";
             var engine = _engine;
-            await RunHandlingLocksAsync(() => engine.Uninstall(a.Def, removeUserFiles, line => Log($"  {line}")));
+            await RunHandlingLocksAsync(() => giveBack = engine.Uninstall(a.Def, removeUserFiles, line => Log($"  {line}")));
             Log($"{a.Name} is uninstalled.");
         } catch (Exception ex) {
             Log($"{a.Name}: {ex.Message}");
@@ -486,6 +487,18 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 o.IsChecked = o.Option.Default;
             UpdateStatuses();
             SetBusy(false);
+        }
+
+        // Files it had taken over go back to their addon (e.g. AOReloaded to ao-vk after MerkUI):
+        // the option is on again, and a reinstall brings the file back.
+        foreach (string id in giveBack) {
+            var owner = _addons.FirstOrDefault(x => x.Id == id);
+            if (owner != null && owner.FindAsset() != null) {
+                Log($"Reinstalling {owner.Name} to give its files back…");
+                await InstallAsync(owner, PrimaryAction.Repair);
+            } else if (owner != null) {
+                Log($"{owner.Name}: press Reinstall to get its files back (its release couldn't be checked).");
+            }
         }
     }
 

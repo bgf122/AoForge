@@ -7,7 +7,7 @@
     <LangVersion>latest</LangVersion>
     <RootNamespace>AoForge</RootNamespace>
     <AssemblyName>AoForge</AssemblyName>
-    <Version>0.3.2</Version>
+    <Version>0.3.3</Version>
     <Product>AoForge</Product>
     <Company>Vaporize</Company>
     <Copyright>Copyright (c) 2026 Vaporize</Copyright>

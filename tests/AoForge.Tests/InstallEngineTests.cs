@@ -264,10 +264,16 @@ public sealed class InstallEngineTests : IDisposable
         Assert.Equal("MerkUI dll 1.1.24", Read("version.dll"));
         Assert.Equal(AddonState.Installed, Engine().GetStatus(MerkUI, "v1.1.24").State);
 
-        // Uninstalling MerkUI removes its version.dll; ao-vk stays installed without AOReloaded.
-        Engine().Uninstall(MerkUI, removeUserFiles: false, Log);
+        // Uninstalling MerkUI removes its version.dll and gives it back to ao-vk: its AOReloaded
+        // option is on again and the UI reinstalls ao-vk.
+        var giveBack = Engine().Uninstall(MerkUI, removeUserFiles: false, Log);
         Assert.False(Exists("version.dll"));
+        Assert.Equal(new[] { "ao-vk" }, giveBack);
+        Assert.Contains("aoreloaded", Engine().Find("ao-vk").OptionList);
+        Engine().Install(AoVk, "v2", AoVkZip("2"), Engine().Find("ao-vk").OptionList, Log, _index.Addons);
+        Assert.Equal("aor 2", Read("version.dll"));
         Assert.Equal("ao-vk 2", Read("randy31.dll"));
+        Assert.Equal(AddonState.Installed, Engine().GetStatus(AoVk, "v2").State);
     }
 
     [Fact]
