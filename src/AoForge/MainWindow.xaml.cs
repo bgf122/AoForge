@@ -38,6 +38,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     AddonVm _selected;
     bool _removeUserFiles;
     GhRelease _selfRelease; // a newer AoForge release, if there is one
+    // While AoForge is open it checks for a newer AoForge every 2 minutes (addons are checked at
+    // start and with Check for updates). An unchanged answer ("304 Not Modified", see
+    // GitHubReleases) doesn't count against GitHub's hourly limit.
+    readonly DispatcherTimer _selfCheckTimer = new() { Interval = TimeSpan.FromMinutes(2) };
     bool _selfCanReplace;   // the exe's folder is writable, so the update can be applied in place
 
     public MainWindow()
@@ -48,6 +52,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         DataContext = this;
         _gameTimer.Tick += (_, _) => UpdateGameRunning();
         Loaded += async (_, _) => await StartAsync();
+        CreateTray();
     }
 
     // --- bound state --------------------------------------------------------------------------
@@ -162,21 +167,30 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         await LoadIndexAsync();
         await RefreshAsync();
+        _selfCheckTimer.Tick += async (_, _) => {
+            if (!_busy)
+                await CheckSelfUpdateAsync(quiet: true); // logs and shows the bar only for a new version
+        };
+        _selfCheckTimer.Start();
     }
 
-    async Task CheckSelfUpdateAsync()
+    // quiet: the timer's check, which doesn't log failures (offline, GitHub busy); it tries again soon.
+    async Task CheckSelfUpdateAsync(bool quiet = false)
     {
         try {
             var release = await _github.GetLatestAsync(SelfUpdater.Repo);
             bool newer = release != null && SelfUpdater.IsNewer(release.TagName, SelfUpdater.Current)
                 && release.Assets?.Any(a => a.Name == SelfUpdater.AssetName) == true;
-            if (newer && _selfRelease?.TagName != release.TagName)
+            if (newer && _selfRelease?.TagName != release.TagName) {
                 Log($"AoForge {release.TagName} is available.");
+                NotifyTray($"AoForge {release.TagName} is available. Click to open AoForge and update.");
+            }
             _selfRelease = newer ? release : null;
             if (newer)
                 _selfCanReplace = SelfUpdater.CanReplace(SelfUpdater.ExePath);
         } catch (Exception e) {
-            Log($"Couldn't check for a new AoForge: {e.Message}");
+            if (!quiet)
+                Log($"Couldn't check for a new AoForge: {e.Message}");
         }
         RaiseAll();
     }

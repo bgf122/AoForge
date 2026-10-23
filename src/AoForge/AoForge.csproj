@@ -7,7 +7,7 @@
     <LangVersion>latest</LangVersion>
     <RootNamespace>AoForge</RootNamespace>
     <AssemblyName>AoForge</AssemblyName>
-    <Version>0.3.0</Version>
+    <Version>0.3.1</Version>
     <Product>AoForge</Product>
     <Company>Vaporize</Company>
     <Copyright>Copyright (c) 2026 Vaporize</Copyright>
@@ -21,6 +21,8 @@
     <Reference Include="System.IO.Compression" />
     <Reference Include="System.IO.Compression.FileSystem" />
     <Reference Include="System.Runtime.Serialization" />
+    <Reference Include="System.Windows.Forms" />
+    <Reference Include="System.Drawing" />
   </ItemGroup>
 
   <ItemGroup>
