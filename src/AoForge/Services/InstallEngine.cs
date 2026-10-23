@@ -454,15 +454,18 @@ public sealed class InstallEngine
     // Files the game holds open can't be replaced; fail before changing anything.
     static void EnsureWritable(IEnumerable<string> paths)
     {
+        var locked = new List<string>();
         foreach (string path in paths.Distinct(PathCmp)) {
             if (!File.Exists(path))
                 continue;
             try {
                 using var _ = new FileStream(path, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
             } catch (IOException) {
-                throw new IOException($"{Path.GetFileName(path)} is in use. Close the game and try again.");
+                locked.Add(path);
             }
         }
+        if (locked.Count > 0)
+            throw new FileInUseException(locked); // the UI finds out who holds them
     }
 
     static void DeleteEmptyDirs(string dir)

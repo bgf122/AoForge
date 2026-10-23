@@ -22,7 +22,7 @@ public static class GameGuard
     }
 
     // Works across 32/64-bit, unlike Process.MainModule.
-    static string ImagePath(int pid)
+    public static string ImagePath(int pid)
     {
         IntPtr h = OpenProcess(0x1000 /* PROCESS_QUERY_LIMITED_INFORMATION */, false, pid);
         if (h == IntPtr.Zero)

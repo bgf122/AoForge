@@ -442,7 +442,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             a.BusyText = $"{verb}…";
             var engine = _engine;
             var defs = _index.Addons.ToList();
-            await Task.Run(() => engine.Install(a.Def, a.LatestTag, zip, options, line => Log($"  {line}"), defs));
+            await RunHandlingLocksAsync(() => engine.Install(a.Def, a.LatestTag, zip, options, line => Log($"  {line}"), defs));
             TryDelete(zip);
             Log($"{a.Name} {a.LatestTag} is installed.");
             a.BusyText = null;
@@ -475,7 +475,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             Log($"Uninstalling {a.Name}…");
             a.BusyText = "Removing…";
             var engine = _engine;
-            await Task.Run(() => engine.Uninstall(a.Def, removeUserFiles, line => Log($"  {line}")));
+            await RunHandlingLocksAsync(() => engine.Uninstall(a.Def, removeUserFiles, line => Log($"  {line}")));
             Log($"{a.Name} is uninstalled.");
         } catch (Exception ex) {
             Log($"{a.Name}: {ex.Message}");
@@ -487,6 +487,46 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             UpdateStatuses();
             SetBusy(false);
         }
+    }
+
+    // Runs an install step off the UI thread. If files it must replace are in use, finds out by
+    // what: leftovers running from the client folder after the game closed (the game's browser
+    // helpers, cef_helper.exe, load its version.dll) can be ended and the step retried once;
+    // anything else is only named.
+    async Task RunHandlingLocksAsync(Action step)
+    {
+        try {
+            await Task.Run(step);
+        } catch (FileInUseException fe) {
+            await EndLeftoverHoldersAsync(fe);
+            await Task.Run(step);
+        }
+    }
+
+    async Task EndLeftoverHoldersAsync(FileInUseException fe)
+    {
+        string files = string.Join(", ", fe.Paths.Select(Path.GetFileName));
+        var holders = await Task.Run(() => FileLocks.WhoHolds(fe.Paths));
+        if (holders.Count == 0)
+            throw new IOException($"{files} is in use, and Windows can't tell by what. Close the game and anything else using its folder, then try again.");
+
+        string list = string.Join(", ", holders.GroupBy(h => h.Name, StringComparer.OrdinalIgnoreCase)
+            .Select(g => g.Count() > 1 ? $"{g.Key} ({g.Count()} processes)" : g.Key));
+        string dir = _engine.ClientDir + "\\";
+        bool game = holders.Any(h => string.Equals(h.Name, "AnarchyOnline.exe", StringComparison.OrdinalIgnoreCase));
+        bool fromClient = holders.All(h => h.ExePath != null && h.ExePath.StartsWith(dir, StringComparison.OrdinalIgnoreCase));
+        if (game)
+            throw new IOException($"{files} is in use by {list}. Close the game and try again.");
+        if (!fromClient)
+            throw new IOException($"{files} is in use by {list}. Close that program and try again.");
+
+        string question = $"{files} is still in use by {list}, left running from the game's folder after the game closed " +
+                          "(the game's browser helpers do this).\n\nEnd them and continue?";
+        if (MessageBox.Show(this, question, "Files in use", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes)
+            throw new IOException($"{files} is in use by {list}.");
+        Log($"Ending {list}…");
+        if (!await Task.Run(() => FileLocks.End(holders)))
+            throw new IOException($"Couldn't end {list}. End them in Task Manager (or restart Windows), then try again.");
     }
 
     bool CheckCanModify()

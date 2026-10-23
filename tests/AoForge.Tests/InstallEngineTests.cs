@@ -366,8 +366,13 @@ public sealed class InstallEngineTests : IDisposable
     [Fact]
     public void Locked_file_fails_before_any_change()
     {
-        using (new FileStream(Path.Combine(_client, "randy31.dll"), FileMode.Open, FileAccess.Read, FileShare.None)) {
-            Assert.Throws<IOException>(() => Engine().Install(AoVk, "v1", AoVkZip("1"), WithAor, Log));
+        string locked = Path.Combine(_client, "randy31.dll");
+        using (new FileStream(locked, FileMode.Open, FileAccess.Read, FileShare.None)) {
+            var ex = Assert.Throws<FileInUseException>(() => Engine().Install(AoVk, "v1", AoVkZip("1"), WithAor, Log));
+            Assert.Contains(locked, ex.Paths);
+            // Windows' Restart Manager names who holds it: this test process.
+            var holders = FileLocks.WhoHolds(ex.Paths);
+            Assert.Contains(holders, h => h.Id == System.Diagnostics.Process.GetCurrentProcess().Id);
         }
         Assert.False(Exists("randy31_orig.dll"));
         Assert.Equal("game renderer", Read("randy31.dll"));
