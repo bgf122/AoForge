@@ -268,7 +268,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             var selfCheck = CheckSelfUpdateAsync();
             await Task.WhenAll(_addons.Select(async a => {
                 try {
-                    a.Release = await _github.GetLatestAsync(a.Def.Repo);
+                    a.Releases = await _github.GetReleasesAsync(a.Def.Repo);
                     a.ReleaseError = null;
                 } catch (Exception e) {
                     a.ReleaseError = e.Message;

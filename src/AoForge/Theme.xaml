@@ -375,6 +375,74 @@
         </Style.Triggers>
     </Style>
 
+    <!-- Patch notes badge, coloured by ReleaseNoteVm.Badge -->
+    <Style x:Key="NoteBadge" TargetType="Border">
+        <Setter Property="CornerRadius" Value="9" />
+        <Setter Property="Padding" Value="7,1" />
+        <Setter Property="Margin" Value="8,0,0,0" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+        <Setter Property="Background" Value="{StaticResource Control}" />
+        <Setter Property="TextElement.Foreground" Value="{StaticResource Muted}" />
+        <Style.Triggers>
+            <DataTrigger Binding="{Binding Badge}" Value="New">
+                <Setter Property="Background" Value="{StaticResource AccentSoft}" />
+                <Setter Property="TextElement.Foreground" Value="{StaticResource AccentHover}" />
+            </DataTrigger>
+            <DataTrigger Binding="{Binding Badge}" Value="Installed">
+                <Setter Property="Background" Value="{StaticResource OkSoft}" />
+                <Setter Property="TextElement.Foreground" Value="{StaticResource Ok}" />
+            </DataTrigger>
+            <DataTrigger Binding="{Binding Badge}" Value="Latest">
+                <Setter Property="Background" Value="{StaticResource InfoSoft}" />
+                <Setter Property="TextElement.Foreground" Value="{StaticResource Info}" />
+            </DataTrigger>
+        </Style.Triggers>
+    </Style>
+
+    <!-- One release in the patch notes: a header row that opens and closes its notes -->
+    <Style x:Key="NotesExpander" TargetType="Expander">
+        <Setter Property="Foreground" Value="{StaticResource Text}" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Expander">
+                    <Border Background="{StaticResource Card}" CornerRadius="6">
+                        <DockPanel>
+                            <ToggleButton DockPanel.Dock="Top" IsChecked="{Binding IsExpanded, RelativeSource={RelativeSource TemplatedParent}}"
+                                          Cursor="Hand" Focusable="False">
+                                <ToggleButton.Template>
+                                    <ControlTemplate TargetType="ToggleButton">
+                                        <Border x:Name="Row" Background="Transparent" CornerRadius="6" Padding="10,8">
+                                            <DockPanel>
+                                                <TextBlock x:Name="Arrow" Text="▸" Width="16" Foreground="{StaticResource Faint}"
+                                                           VerticalAlignment="Center" />
+                                                <ContentPresenter VerticalAlignment="Center" />
+                                            </DockPanel>
+                                        </Border>
+                                        <ControlTemplate.Triggers>
+                                            <Trigger Property="IsChecked" Value="True">
+                                                <Setter TargetName="Arrow" Property="Text" Value="▾" />
+                                            </Trigger>
+                                            <Trigger Property="IsMouseOver" Value="True">
+                                                <Setter TargetName="Row" Property="Background" Value="{StaticResource CardHover}" />
+                                            </Trigger>
+                                        </ControlTemplate.Triggers>
+                                    </ControlTemplate>
+                                </ToggleButton.Template>
+                                <ContentPresenter Content="{TemplateBinding Header}" ContentTemplate="{TemplateBinding HeaderTemplate}" />
+                            </ToggleButton>
+                            <ContentPresenter x:Name="Body" Margin="26,0,12,10" Visibility="Collapsed" />
+                        </DockPanel>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsExpanded" Value="True">
+                            <Setter TargetName="Body" Property="Visibility" Value="Visible" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
     <BooleanToVisibilityConverter x:Key="Vis" />
 
 </ResourceDictionary>

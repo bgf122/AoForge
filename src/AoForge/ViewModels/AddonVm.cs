@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.Globalization;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Text.RegularExpressions;
@@ -47,6 +48,57 @@ public sealed class OptionVm : Observable
     public bool IsChecked { get => _isChecked; set => Set(ref _isChecked, value); }
 }
 
+// One release in an addon's patch notes.
+public sealed class ReleaseNoteVm : Observable
+{
+    bool _isExpanded, _isNew, _isInstalled;
+
+    public ReleaseNoteVm(GhRelease release, bool isLatest)
+    {
+        Release = release;
+        IsLatest = isLatest;
+    }
+
+    public GhRelease Release { get; }
+    public string Tag => Release.TagName;
+    public string Title => string.IsNullOrWhiteSpace(Release.Name) ? Release.TagName : Release.Name;
+    public string Date => DateTime.TryParse(Release.PublishedAt, CultureInfo.InvariantCulture, DateTimeStyles.None, out var d)
+        ? d.ToString("d MMM yyyy", CultureInfo.InvariantCulture) : "";
+    public string Body => string.IsNullOrWhiteSpace(Release.Body) ? "No notes for this release." : Release.Body.Replace("\r\n", "\n").Trim();
+    public bool IsLatest { get; }
+
+    // "New" (newer than the installed one), "Installed", "Latest" or "Prerelease"; null for none.
+    public string Badge => _isNew ? "New" : _isInstalled ? "Installed" : IsLatest ? "Latest" : Release.Prerelease ? "Prerelease" : null;
+    public bool HasBadge => Badge != null;
+
+    // Set by the user (the expander's two-way binding); then the default no longer applies.
+    public bool IsExpanded
+    {
+        get => _isExpanded;
+        set { Toggled = true; Set(ref _isExpanded, value); }
+    }
+
+    public bool Toggled { get; private set; }
+
+    public void SetDefaultExpanded(bool expanded)
+    {
+        if (!Toggled)
+            Set(ref _isExpanded, expanded, nameof(IsExpanded));
+    }
+
+    public bool IsNew
+    {
+        get => _isNew;
+        set { if (Set(ref _isNew, value)) { Raise(nameof(Badge)); Raise(nameof(HasBadge)); } }
+    }
+
+    public bool IsInstalled
+    {
+        get => _isInstalled;
+        set { if (Set(ref _isInstalled, value)) { Raise(nameof(Badge)); Raise(nameof(HasBadge)); } }
+    }
+}
+
 public sealed class AddonVm : Observable
 {
     static readonly Color[] IconColors = {
@@ -55,6 +107,7 @@ public sealed class AddonVm : Observable
     };
 
     AddonStatus _status = new() { State = AddonState.NotInstalled };
+    List<GhRelease> _releases = new();
     GhRelease _release;
     string _releaseError;
     string _busyText;
@@ -87,13 +140,49 @@ public sealed class AddonVm : Observable
     public AddonStatus Status
     {
         get => _status;
-        set { _status = value; RaiseAll(); }
+        set { _status = value; MarkPatchNotes(); RaiseAll(); }
     }
 
-    public GhRelease Release
+    // The repo's recent releases, newest first. The latest is the one installed and updated to;
+    // all of them are listed with their patch notes.
+    public List<GhRelease> Releases
     {
-        get => _release;
-        set { _release = value; RaiseAll(); }
+        get => _releases;
+        set {
+            _releases = value ?? new List<GhRelease>();
+            _release = GitHubReleases.Latest(_releases);
+            var old = PatchNotes.Where(n => n.Toggled).ToDictionary(n => n.Tag ?? "", n => n.IsExpanded);
+            PatchNotes.Clear();
+            foreach (var r in _releases.Where(r => !r.Draft)) {
+                var note = new ReleaseNoteVm(r, r == _release);
+                if (old.TryGetValue(note.Tag ?? "", out bool expanded))
+                    note.IsExpanded = expanded;
+                PatchNotes.Add(note);
+            }
+            MarkPatchNotes();
+            RaiseAll();
+        }
+    }
+
+    public ObservableCollection<ReleaseNoteVm> PatchNotes { get; } = new();
+    public bool HasPatchNotes => PatchNotes.Count > 0;
+
+    // Marks the installed release and the ones newer than it. The latest release and the new ones
+    // are open, older ones closed, except for those the user opened or closed.
+    void MarkPatchNotes()
+    {
+        string installed = State switch {
+            AddonState.Installed or AddonState.UpdateAvailable or AddonState.NeedsRepair => _status.InstalledTag,
+            AddonState.ManualInstall => _status.DetectedVersion,
+            _ => null,
+        };
+        Version installedVersion = SelfUpdater.ParseTag(installed);
+        foreach (var n in PatchNotes) {
+            Version v = SelfUpdater.ParseTag(n.Tag);
+            n.IsInstalled = installed != null && (SameVersion(n.Tag ?? "", installed) || (v != null && v == installedVersion));
+            n.IsNew = installedVersion != null && v != null && v > installedVersion && !n.Release.Prerelease;
+            n.SetDefaultExpanded(n.IsLatest || n.IsNew);
+        }
     }
 
     public string ReleaseError
@@ -188,18 +277,12 @@ public sealed class AddonVm : Observable
     public string Problems => string.Join("\n", _status.Problems);
     public bool HasProblems => _status.Problems.Count > 0;
 
-    public string ReleaseTitle
-    {
-        get {
-            if (_release == null)
-                return _releaseError != null ? "Couldn't check for releases: " + _releaseError : "No release published yet.";
-            string date = DateTime.TryParse(_release.PublishedAt, out var d) ? d.ToString("d MMM yyyy") : "";
-            return $"{_release.Name ?? _release.TagName}   ·   {date}";
-        }
-    }
-
-    public string ReleaseNotes => _release?.Body?.Replace("\r\n", "\n").Trim();
-    public bool HasReleaseNotes => !string.IsNullOrEmpty(ReleaseNotes);
+    // Shown instead of the patch notes when there are none to show.
+    public string ReleaseMessage =>
+        _releaseError != null ? "Couldn't check for releases: " + _releaseError
+        : PatchNotes.Count == 0 ? "No release published yet."
+        : null;
+    public bool HasReleaseMessage => ReleaseMessage != null;
 
     public List<string> SelectedOptions() => Options.Where(o => o.IsChecked).Select(o => o.Option.Id).ToList();
 

@@ -1,6 +1,7 @@
 <Window x:Class="AoForge.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:v="clr-namespace:AoForge.Views"
         Title="AoForge" Width="1120" Height="720" MinWidth="820" MinHeight="520"
         WindowStartupLocation="CenterScreen" Icon="AoForge.ico" Background="{StaticResource Bg}"
         FontFamily="Segoe UI" FontSize="13" Foreground="{StaticResource Text}"
@@ -250,12 +251,31 @@
                             <TextBlock Text="About" FontSize="14" FontWeight="SemiBold" Margin="0,20,0,6" />
                             <TextBlock Text="{Binding Description}" TextWrapping="Wrap" Foreground="#C9CED6" LineHeight="19" />
 
-                            <TextBlock Text="Latest release" FontSize="14" FontWeight="SemiBold" Margin="0,20,0,2" />
-                            <TextBlock Text="{Binding ReleaseTitle}" Style="{StaticResource MutedText}" TextWrapping="Wrap" Margin="0,0,0,8" />
-                            <TextBox Text="{Binding ReleaseNotes, Mode=OneWay}" IsReadOnly="True" TextWrapping="Wrap"
-                                     Background="{StaticResource Card}" Foreground="#C9CED6" FontSize="12"
-                                     MaxHeight="320" VerticalScrollBarVisibility="Auto"
-                                     Visibility="{Binding HasReleaseNotes, Converter={StaticResource Vis}}" />
+                            <TextBlock Text="Patch notes" FontSize="14" FontWeight="SemiBold" Margin="0,20,0,8" />
+                            <TextBlock Text="{Binding ReleaseMessage}" Style="{StaticResource MutedText}" TextWrapping="Wrap" Margin="0,0,0,8"
+                                       Visibility="{Binding HasReleaseMessage, Converter={StaticResource Vis}}" />
+                            <ItemsControl ItemsSource="{Binding PatchNotes}" Focusable="False">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Expander Style="{StaticResource NotesExpander}" IsExpanded="{Binding IsExpanded}" Margin="0,0,0,6">
+                                            <Expander.Header>
+                                                <DockPanel>
+                                                    <TextBlock DockPanel.Dock="Right" Text="{Binding Date}" Style="{StaticResource MutedText}"
+                                                               FontSize="12" VerticalAlignment="Center" Margin="10,0,0,0" />
+                                                    <Border DockPanel.Dock="Right" Style="{StaticResource NoteBadge}"
+                                                            Visibility="{Binding HasBadge, Converter={StaticResource Vis}}">
+                                                        <TextBlock Text="{Binding Badge}" FontSize="10.5" FontWeight="SemiBold"
+                                                                   Foreground="{Binding (TextElement.Foreground), RelativeSource={RelativeSource AncestorType=Border}}" />
+                                                    </Border>
+                                                    <TextBlock Text="{Binding Title}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"
+                                                               VerticalAlignment="Center" />
+                                                </DockPanel>
+                                            </Expander.Header>
+                                            <v:MarkdownView Markdown="{Binding Body}" Margin="0,2,0,0" />
+                                        </Expander>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
                         </StackPanel>
                     </ScrollViewer>
                 </Grid>

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Runtime.Serialization;
@@ -17,6 +18,8 @@ public sealed class GhRelease
     [DataMember(Name = "body")] public string Body { get; set; }
     [DataMember(Name = "html_url")] public string HtmlUrl { get; set; }
     [DataMember(Name = "published_at")] public string PublishedAt { get; set; }
+    [DataMember(Name = "draft")] public bool Draft { get; set; }
+    [DataMember(Name = "prerelease")] public bool Prerelease { get; set; }
     [DataMember(Name = "assets")] public List<GhAsset> Assets { get; set; }
 }
 
@@ -30,7 +33,7 @@ public sealed class GhAsset
 }
 
 // Public GitHub releases, no login. Unauthenticated API calls are limited to 60 an hour, so
-// /releases/latest answers are cached with their ETag: a "304 Not Modified" doesn't count.
+// answers are cached with their ETag: a "304 Not Modified" doesn't count.
 public sealed class GitHubReleases
 {
     static readonly HttpClient Http = CreateClient();
@@ -46,35 +49,49 @@ public sealed class GitHubReleases
     }
 
     // The latest release, or null if the repo has none yet.
-    public async Task<GhRelease> GetLatestAsync(string repo)
+    public Task<GhRelease> GetLatestAsync(string repo) =>
+        GetCachedAsync<GhRelease>($"repos/{repo}/releases/latest", repo.Replace('/', '_'));
+
+    // The repo's recent releases, newest first, for their patch notes. One API call, the same as
+    // GetLatestAsync. Empty if the repo has none yet.
+    public async Task<List<GhRelease>> GetReleasesAsync(string repo) =>
+        await GetCachedAsync<List<GhRelease>>($"repos/{repo}/releases?per_page=30", repo.Replace('/', '_') + ".releases").ConfigureAwait(false)
+        ?? new List<GhRelease>();
+
+    // The release GitHub calls latest: the newest one that is neither a draft nor a prerelease.
+    public static GhRelease Latest(IEnumerable<GhRelease> releases) =>
+        releases.FirstOrDefault(r => !r.Draft && !r.Prerelease);
+
+    // GET api.github.com/<path>, cached as <cacheName>.json with its ETag. Null on 404.
+    async Task<T> GetCachedAsync<T>(string path, string cacheName) where T : class
     {
         Directory.CreateDirectory(_cacheDir);
-        string key = Path.Combine(_cacheDir, repo.Replace('/', '_'));
+        string key = Path.Combine(_cacheDir, cacheName);
         string cacheFile = key + ".json", etagFile = key + ".etag";
 
-        var req = new HttpRequestMessage(HttpMethod.Get, $"https://api.github.com/repos/{repo}/releases/latest");
+        var req = new HttpRequestMessage(HttpMethod.Get, "https://api.github.com/" + path);
         req.Headers.Accept.ParseAdd("application/vnd.github+json");
         if (File.Exists(cacheFile) && File.Exists(etagFile))
             req.Headers.TryAddWithoutValidation("If-None-Match", File.ReadAllText(etagFile));
 
         using var resp = await Http.SendAsync(req).ConfigureAwait(false);
         if (resp.StatusCode == HttpStatusCode.NotModified)
-            return Json.ReadFile<GhRelease>(cacheFile);
+            return Json.ReadFile<T>(cacheFile);
         if (resp.StatusCode == HttpStatusCode.NotFound)
             return null;
         if (resp.StatusCode == HttpStatusCode.Forbidden || (int)resp.StatusCode == 429) {
             if (File.Exists(cacheFile))
-                return Json.ReadFile<GhRelease>(cacheFile);
+                return Json.ReadFile<T>(cacheFile);
             throw new HttpRequestException("GitHub's limit for checks without a login was reached. Try again in an hour.");
         }
         resp.EnsureSuccessStatusCode();
 
         byte[] body = await resp.Content.ReadAsByteArrayAsync().ConfigureAwait(false);
-        var release = Json.Parse<GhRelease>(body);
+        var result = Json.Parse<T>(body);
         File.WriteAllBytes(cacheFile, body);
         if (resp.Headers.ETag != null)
             File.WriteAllText(etagFile, resp.Headers.ETag.ToString());
-        return release;
+        return result;
     }
 
     public async Task<string> GetStringAsync(string url)
